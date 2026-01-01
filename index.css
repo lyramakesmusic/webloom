@@ -772,7 +772,22 @@ body {
 .bottom-center {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
+}
+
+.footer-link {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-decoration: none;
+}
+
+.footer-link:hover {
+    color: var(--accent-blue);
+}
+
+.footer-copyright {
+    font-size: 11px;
+    color: var(--text-muted);
 }
 
 .stat {
