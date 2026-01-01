@@ -63,7 +63,7 @@ function buildCompletionRequest(settings, prompt) {
                 }
             ],
             max_tokens: settings.max_tokens || 32,
-            temperature: settings.temperature || 1.0,
+            temperature: settings.temperature ?? 1.0,
             stream: true
         };
     } else {
@@ -72,7 +72,7 @@ function buildCompletionRequest(settings, prompt) {
             model: detection.model || settings.oai_model || '',
             prompt: prompt,
             max_tokens: settings.max_tokens || 32,
-            temperature: settings.temperature || 1.0,
+            temperature: settings.temperature ?? 1.0,
             min_p: settings.min_p || 0.01,
             stream: true
         };

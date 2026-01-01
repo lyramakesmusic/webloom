@@ -48,6 +48,7 @@ function init() {
     initPanelDrag();
     initBottomBar();
     initToast();
+    initPopups();
 
     // Restore panel order if swapped
     restorePanelOrder();
@@ -638,6 +639,40 @@ function showError(message) {
     setTimeout(() => {
         toast.classList.remove('show');
     }, 8000);
+}
+
+// ============================================
+// INFO POPUPS
+// ============================================
+
+function initPopups() {
+    // Endpoint info popup
+    const endpointBtn = document.getElementById('endpoint-info-btn');
+    const endpointPopup = document.getElementById('endpoint-info-popup');
+    const endpointClose = document.getElementById('endpoint-info-close');
+
+    endpointBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        endpointPopup.classList.add('show');
+    });
+
+    endpointClose?.addEventListener('click', () => {
+        endpointPopup.classList.remove('show');
+    });
+
+    // Close on overlay click
+    endpointPopup?.addEventListener('click', (e) => {
+        if (e.target === endpointPopup) {
+            endpointPopup.classList.remove('show');
+        }
+    });
+
+    // Close on Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            endpointPopup?.classList.remove('show');
+        }
+    });
 }
 
 // ============================================

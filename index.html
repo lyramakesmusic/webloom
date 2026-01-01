@@ -41,7 +41,12 @@
             <div class="sidebar-content">
                 <!-- Model/Endpoint -->
                 <div class="control-group">
-                    <label>Model / Endpoint</label>
+                    <label>
+                        Model / Endpoint
+                        <button class="info-btn" id="endpoint-info-btn" title="What goes here?">
+                            <i class="bi bi-info-circle"></i>
+                        </button>
+                    </label>
                     <input type="text" id="model-input" value="moonshotai/kimi-k2"
                         placeholder="provider/model or http://...">
                     <div class="help-text">
@@ -230,6 +235,41 @@
                 <button class="toast-close" aria-label="Close">&times;</button>
             </div>
             <div class="toast-body" id="error-toast-body"></div>
+        </div>
+    </div>
+
+    <!-- Endpoint Info Popup -->
+    <div class="popup-overlay" id="endpoint-info-popup">
+        <div class="popup">
+            <div class="popup-header">
+                <span>Model / Endpoint</span>
+                <button class="popup-close" id="endpoint-info-close">&times;</button>
+            </div>
+            <div class="popup-body">
+                <p>This field accepts two formats:</p>
+
+                <h4>OpenRouter Models</h4>
+                <p>Enter a model name from <a href="https://openrouter.ai/models" target="_blank">OpenRouter's model list</a>. The OpenRouter endpoint is built-in, so you only need the model string:</p>
+                <code>anthropic/claude-sonnet-4</code>
+                <code>openai/gpt-4o</code>
+                <code>moonshotai/kimi-k2</code>
+
+                <h4>Provider Targeting (::)</h4>
+                <p>Some models are hosted by multiple providers. Use <strong>::</strong> to specify which provider to use:</p>
+                <code>moonshotai/kimi-k2::deepinfra</code>
+                <code>qwen/qwen-2.5-72b::fireworks</code>
+                <p>This routes your request to a specific provider instead of letting OpenRouter choose.</p>
+
+                <h4>OpenAI-Compatible Endpoints</h4>
+                <p>For self-hosted models or other APIs that follow OpenAI's format, enter a full URL:</p>
+                <code>http://localhost:5000/v1</code>
+                <code>https://my-cloudflare-worker.workers.dev</code>
+                <p>When using a URL, the "Session API Key" and "Model Name" fields will appear for additional configuration.</p>
+
+                <h4>Other APIs</h4>
+                <p>Native Anthropic API, Moonshot API, and other proprietary endpoints are not directly supported. To use these models, access them through OpenRouter with the appropriate model string:</p>
+                <code>anthropic/claude-opus-4</code>
+            </div>
         </div>
     </div>
 

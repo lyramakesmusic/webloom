@@ -14,9 +14,48 @@ let renderDebounceTimer = null;
 const SAVE_DEBOUNCE_MS = 300;
 const RENDER_DEBOUNCE_MS = 100;
 
+// Undo/redo state (tree snapshots)
+let undoStack = [];
+let redoStack = [];
+const MAX_UNDO_STATES = 50;
+
 function debouncedSave() {
     clearTimeout(saveDebounceTimer);
     saveDebounceTimer = setTimeout(() => saveTree(), SAVE_DEBOUNCE_MS);
+}
+
+// Push current tree state to undo stack (call before making changes)
+function pushUndoState() {
+    const snapshot = JSON.stringify(appState.tree);
+    // Avoid duplicate consecutive states
+    if (undoStack.length > 0 && undoStack[undoStack.length - 1] === snapshot) return;
+    undoStack.push(snapshot);
+    if (undoStack.length > MAX_UNDO_STATES) undoStack.shift();
+    redoStack = []; // clear redo on new action
+}
+
+function undo() {
+    if (undoStack.length === 0) return;
+    // Save current state for redo
+    redoStack.push(JSON.stringify(appState.tree));
+    // Restore previous state
+    const snapshot = undoStack.pop();
+    appState.tree = JSON.parse(snapshot);
+    renderTree();
+    updateEditor(true);
+    saveTree();
+}
+
+function redo() {
+    if (redoStack.length === 0) return;
+    // Save current state for undo
+    undoStack.push(JSON.stringify(appState.tree));
+    // Restore next state
+    const snapshot = redoStack.pop();
+    appState.tree = JSON.parse(snapshot);
+    renderTree();
+    updateEditor(true);
+    saveTree();
 }
 
 function debouncedRenderTree() {
@@ -138,15 +177,18 @@ function handleEditorInput(e) {
     if (editorState.isUpdating) return;
 
     const editor = e.target;
-    // innerText can return "\n" for empty contenteditable, normalize it
+    // innerText can return trailing \n for empty lines or after <br>, normalize it
     let newText = editor.innerText || '';
-    if (newText === '\n') newText = '';
+    newText = newText.replace(/\n$/, '');
     const oldText = editorState.segments.map(s => s.text).join('');
 
     // Find what changed
     const changes = findChanges(oldText, newText);
 
     if (changes.type === 'none') return;
+
+    // Save state for undo before making changes
+    pushUndoState();
 
     // Track node count before to detect structure changes
     const nodeCountBefore = Object.keys(appState.tree.nodes).length;
@@ -296,9 +338,27 @@ function handleInsert(position, text) {
     const nodeOffset = position - segment.start;
 
     if (node.type === 'human') {
-        // Human node - just insert text directly
-        const before = node.text.substring(0, nodeOffset);
-        const after = node.text.substring(nodeOffset);
+        const nodeText = node.text || '';
+        const atEnd = nodeOffset >= nodeText.length;
+        const hasChildren = getChildren(appState.tree.nodes, node.id).length > 0;
+
+        // If appending to end of human node that has children, create new human child
+        // This preserves context for existing generations
+        if (atEnd && hasChildren) {
+            editorState.structureChanged = true;
+            const newNode = createNode(node.id, text, 'human', null, {
+                x: node.position.x + 320,
+                y: node.position.y
+            }, {});
+            appState.tree.nodes[newNode.id] = newNode;
+            appState.tree.selected_node_id = newNode.id;
+            repositionSiblings(node.id);
+            return;
+        }
+
+        // Otherwise insert text directly
+        const before = nodeText.substring(0, nodeOffset);
+        const after = nodeText.substring(nodeOffset);
         node.text = before + text + after;
     } else {
         // AI node - check for adjacent human nodes at boundaries
@@ -377,6 +437,7 @@ function splitNodeForInsertion(node, offset, insertText) {
         min_p: node.min_p,
         max_tokens: node.max_tokens
     });
+    afterNode.splitFrom = node.id; // Mark as continuation of original node
     nodes[afterNode.id] = afterNode;
 
     // Reparent existing children to afterNode
@@ -430,7 +491,7 @@ function handleDelete(position, count) {
     }
 }
 
-// Remove empty node and cascade delete children
+// Remove empty node, reparenting children to grandparent
 function maybeRemoveEmptyNode(node) {
     editorState.structureChanged = true;
     const nodes = appState.tree.nodes;
@@ -442,13 +503,45 @@ function maybeRemoveEmptyNode(node) {
         return;
     }
 
+    const parent = nodes[node.parent_id];
+    const children = getChildren(nodes, node.id);
+
+    // Check for split AI node recombination:
+    // If this empty human node sits between a parent AI node and a single child AI node
+    // that was split from that parent, recombine them
+    if (node.type === 'human' && parent && parent.type === 'ai' &&
+        children.length === 1 && children[0].type === 'ai' &&
+        children[0].splitFrom === parent.id) {
+
+        const continuation = children[0];
+
+        // Merge continuation text into parent
+        parent.text = (parent.text || '') + (continuation.text || '');
+
+        // Reparent continuation's children to parent
+        getChildren(nodes, continuation.id).forEach(child => {
+            child.parent_id = parent.id;
+        });
+
+        // Update selection
+        if (appState.tree.selected_node_id === node.id ||
+            appState.tree.selected_node_id === continuation.id) {
+            appState.tree.selected_node_id = parent.id;
+        }
+
+        // Delete the empty human node and the continuation node
+        delete nodes[node.id];
+        delete nodes[continuation.id];
+        return;
+    }
+
     // Update selection before deleting
     if (appState.tree.selected_node_id === node.id) {
         appState.tree.selected_node_id = node.parent_id;
     }
 
-    // Cascade delete: node + all descendants
-    deleteNode(nodes, node.id);
+    // Delete node but preserve children (reparent to grandparent)
+    deleteNodePreserveChildren(nodes, node.id);
 }
 
 // Find segment at a text position
@@ -527,6 +620,21 @@ function handleEditorDrop(e) {
 
 // Handle keyboard shortcuts
 function handleEditorKeydown(e) {
+    // Undo - prevent browser undo which conflicts with tree structure
+    if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+        return;
+    }
+
+    // Redo (Ctrl+Y or Ctrl+Shift+Z)
+    if ((e.key === 'y' && (e.ctrlKey || e.metaKey)) ||
+        (e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey)) {
+        e.preventDefault();
+        redo();
+        return;
+    }
+
     // Ctrl+Enter to generate
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();

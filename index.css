@@ -924,6 +924,120 @@ body {
 }
 
 /* ============================================
+   INFO BUTTON & POPUP
+   ============================================ */
+
+.info-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    margin-left: 6px;
+    font-size: 12px;
+    vertical-align: middle;
+}
+
+.info-btn:hover {
+    color: var(--text-primary);
+}
+
+.popup-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+}
+
+.popup-overlay.show {
+    display: flex;
+}
+
+.popup {
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 500;
+}
+
+.popup-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.popup-close:hover {
+    color: var(--text-primary);
+}
+
+.popup-body {
+    padding: 16px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.popup-body h4 {
+    color: var(--text-primary);
+    margin: 16px 0 8px 0;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.popup-body h4:first-child {
+    margin-top: 8px;
+}
+
+.popup-body p {
+    margin: 8px 0;
+}
+
+.popup-body code {
+    display: block;
+    background: var(--code-block);
+    padding: 6px 10px;
+    margin: 4px 0;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    color: var(--color-model-1);
+    border-radius: 2px;
+}
+
+.popup-body a {
+    color: var(--accent-blue);
+    text-decoration: none;
+}
+
+.popup-body a:hover {
+    text-decoration: underline;
+}
+
+/* ============================================
    UTILITIES
    ============================================ */
 

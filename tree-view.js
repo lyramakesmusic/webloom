@@ -536,9 +536,14 @@ function deleteNodeWithConfirm(node) {
         }
     }
 
-    // If deleting selected node, select parent
-    if (appState.tree.selected_node_id === node.id) {
-        appState.tree.selected_node_id = node.parent_id;
+    // If deleting selected node or any ancestor of selected, select parent of deleted
+    const selectedId = appState.tree.selected_node_id;
+    if (selectedId) {
+        const descendants = getDescendants(appState.tree.nodes, node.id);
+        const descendantIds = new Set(descendants.map(d => d.id));
+        if (selectedId === node.id || descendantIds.has(selectedId)) {
+            appState.tree.selected_node_id = node.parent_id;
+        }
     }
 
     deleteNode(appState.tree.nodes, node.id);
