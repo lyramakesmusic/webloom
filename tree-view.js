@@ -152,6 +152,23 @@ function updateTreeViewport() {
             `translate(${treeCanvas.pan.x},${treeCanvas.pan.y}) scale(${treeCanvas.zoom})`
         );
     }
+
+    // Update background to cover visible area (infinite canvas effect)
+    const canvas = document.getElementById('tree-canvas');
+    const bg = document.getElementById('tree-bg');
+    if (canvas && bg) {
+        const screenW = canvas.clientWidth || window.innerWidth;
+        const screenH = canvas.clientHeight || window.innerHeight;
+        // Convert screen bounds to world coordinates
+        const worldX = -treeCanvas.pan.x / treeCanvas.zoom;
+        const worldY = -treeCanvas.pan.y / treeCanvas.zoom;
+        const worldW = screenW / treeCanvas.zoom;
+        const worldH = screenH / treeCanvas.zoom;
+        bg.setAttribute('x', worldX);
+        bg.setAttribute('y', worldY);
+        bg.setAttribute('width', worldW);
+        bg.setAttribute('height', worldH);
+    }
 }
 
 // Light update - just update text of loading nodes without rebuilding DOM
