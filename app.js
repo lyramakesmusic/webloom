@@ -222,6 +222,21 @@ function loadTree() {
             const tree = JSON.parse(saved);
             if (tree.nodes && typeof tree.nodes === 'object') {
                 appState.tree = tree;
+
+                // Find root node (no parent_id)
+                const root = Object.values(appState.tree.nodes).find(n => !n.parent_id);
+
+                // If no root, clear all orphaned nodes
+                if (!root && Object.keys(appState.tree.nodes).length > 0) {
+                    console.warn('Clearing orphaned nodes - no root found');
+                    appState.tree.nodes = {};
+                    appState.tree.selected_node_id = null;
+                }
+
+                // Validate selected_node_id exists, fallback to root
+                if (!appState.tree.selected_node_id || !appState.tree.nodes[appState.tree.selected_node_id]) {
+                    appState.tree.selected_node_id = root ? root.id : null;
+                }
             }
         }
     } catch (e) {
@@ -366,12 +381,10 @@ function handleTreeImport(e) {
 
             appState.tree = tree;
 
-            // Select first node if none selected
-            if (!appState.tree.selected_node_id) {
+            // Validate/fix selected_node_id
+            if (!appState.tree.selected_node_id || !appState.tree.nodes[appState.tree.selected_node_id]) {
                 const root = findRoot(appState.tree.nodes);
-                if (root) {
-                    appState.tree.selected_node_id = root.id;
-                }
+                appState.tree.selected_node_id = root ? root.id : null;
             }
 
             saveTree();

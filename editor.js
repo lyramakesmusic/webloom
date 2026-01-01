@@ -60,6 +60,8 @@ function updateEditor(skipCursorRestore = false) {
         editorState.nodeId = null;
         editorState.segments = [];
         editorState.isUpdating = false;
+        // Keep focus so user can type to create new root
+        editor.focus();
         return;
     }
 
@@ -136,7 +138,9 @@ function handleEditorInput(e) {
     if (editorState.isUpdating) return;
 
     const editor = e.target;
-    const newText = editor.innerText || '';  // innerText respects <br> as \n
+    // innerText can return "\n" for empty contenteditable, normalize it
+    let newText = editor.innerText || '';
+    if (newText === '\n') newText = '';
     const oldText = editorState.segments.map(s => s.text).join('');
 
     // Find what changed
@@ -238,18 +242,22 @@ function findChanges(oldText, newText) {
 // Apply changes to the tree structure
 function applyChangesToTree(changes, oldText, newText) {
     let selectedId = appState.tree.selected_node_id;
+    const selectedNode = selectedId ? appState.tree.nodes[selectedId] : null;
 
-    // No node exists - create root on insert
-    if (!selectedId && changes.type === 'insert') {
+    // No valid node exists - create root on insert
+    if (!selectedNode && changes.type === 'insert') {
         editorState.structureChanged = true;
         const root = createNode(null, changes.text, 'human', null, { x: 100, y: 200 }, {});
         appState.tree.nodes[root.id] = root;
         appState.tree.selected_node_id = root.id;
         refreshSegments();
+        saveTree();
+        renderTree();
+        panToNode(root.id);
         return;
     }
 
-    if (!selectedId) return;
+    if (!selectedNode) return;
 
     // Find which segment(s) are affected
     if (changes.type === 'insert') {
@@ -416,7 +424,7 @@ function handleDelete(position, count) {
         const after = node.text.substring(del.endOffset);
         node.text = before + after;
 
-        if (!node.text && node.parent_id) {
+        if (!node.text) {
             maybeRemoveEmptyNode(node);
         }
     }

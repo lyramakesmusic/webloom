@@ -135,7 +135,7 @@
                 <div class="panel-content">
                     <div class="editor-container">
                         <div id="editor" class="editor" contenteditable="true" spellcheck="false"
-                            placeholder="Create a seed node or start typing..."></div>
+                            placeholder="Start typing to create a seed..."></div>
                     </div>
                 </div>
                 <!-- Editor Bottom Bar -->
@@ -171,6 +171,9 @@
             <div class="panel tree-panel" id="tree-panel" data-panel="tree">
                 <div class="panel-header">
                     <span class="panel-title" draggable="true" data-panel="tree">Tree</span>
+                    <button id="reset-view-btn" class="btn-icon" title="Reset view to selected node">
+                        <i class="bi bi-bullseye"></i>
+                    </button>
                 </div>
                 <div class="panel-content">
                     <svg id="tree-canvas" width="100%" height="100%">
@@ -194,11 +197,14 @@
     <!-- Bottom Bar (stats only) -->
     <footer class="bottom-bar">
         <div class="bottom-left">
-            <span class="stat" id="model-display">moonshotai/kimi-k2</span>
+            <span class="stat" id="model-display">moonshotai/kimi-k2::deepinfra</span>
         </div>
         <div class="bottom-center">
-            <a href="https://github.com/lyramakesmusic/webloom" target="_blank" class="footer-link">source on github</a>
+            <span class="footer-copyright"></span>
+            <a href="https://web-loom.org/" target="_blank" class="footer-link">web-loom.org</a>
             <span class="footer-copyright">© 2026</span> <a href="https://x.com/_lyraaaa_" target="_blank" class="footer-link">lyra bubbles</a>
+            <a href="https://github.com/lyramakesmusic/webloom" target="_blank" class="footer-link">source on github</a>
+            <a href="https://github.com/sponsors/lyramakesmusic" target="_blank" class="footer-link">sponsor pls</a>
         </div>
         <div class="bottom-right">
             <span class="stat" id="char-count">0 chars</span>

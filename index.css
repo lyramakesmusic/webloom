@@ -361,6 +361,12 @@ body {
 .btn-half:hover {
     background: var(--code-highlight);
     border-color: var(--accent-blue);
+    position: relative;
+    z-index: 1;
+}
+
+.btn-half:first-of-type:hover {
+    border-right: 1px solid var(--accent-blue);
 }
 
 .btn-icon {
@@ -516,7 +522,7 @@ body {
     content: '';
     position: absolute;
     left: 0;
-    top: 30.5px;
+    top: 31px;
     bottom: 0;
     width: 100%;
     background: transparent;
@@ -551,9 +557,8 @@ body {
 
 .tree-node .node-bg {
     fill: var(--bg-lighter);
-    stroke: var(--border-color);
     stroke-width: 1px;
-    transition: fill 0.1s ease, stroke 0.1s ease;
+    transition: fill 0.1s ease, stroke-width 0.1s ease;
 }
 
 .tree-node:hover .node-bg {
@@ -561,28 +566,16 @@ body {
 }
 
 .tree-node.selected .node-bg {
-    stroke: var(--accent-blue);
-    stroke-width: 1.5px;
-}
-
-.tree-node.on-path .node-bg {
-    stroke: var(--accent-blue-dim);
-    stroke-width: 1px;
-}
-
-/* Grey outline on unselected nodes */
-.tree-node:not(.selected):not(.on-path) .node-bg {
-    stroke: var(--text-muted);
-    stroke-width: 1px;
+    stroke-width: 2px;
 }
 
 .tree-node.loading .node-bg {
-    stroke: var(--warning-yellow);
+    stroke: var(--warning-yellow) !important;
     stroke-dasharray: 4 2;
 }
 
 .tree-node.error .node-bg {
-    stroke: var(--error-red);
+    stroke: var(--error-red) !important;
 }
 
 .node-text {

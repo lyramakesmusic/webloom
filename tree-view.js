@@ -25,6 +25,28 @@ function initTreeCanvas() {
     svg.addEventListener('touchstart', handleCanvasTouchStart, { passive: false });
     svg.addEventListener('touchmove', handleCanvasTouchMove, { passive: false });
     svg.addEventListener('touchend', handleCanvasTouchEnd);
+
+    // Reset view button
+    document.getElementById('reset-view-btn')?.addEventListener('click', resetView);
+}
+
+// Reset view to selected node or root
+function resetView() {
+    const selectedId = appState.tree.selected_node_id;
+    if (selectedId && appState.tree.nodes[selectedId]) {
+        panToNode(selectedId);
+    } else {
+        // Find root and pan to it
+        const root = Object.values(appState.tree.nodes).find(n => !n.parent_id);
+        if (root) {
+            panToNode(root.id);
+        } else {
+            // No nodes - reset to origin
+            treeCanvas.pan = { x: 0, y: 0 };
+            treeCanvas.zoom = 1;
+            updateTreeViewport();
+        }
+    }
 }
 
 function handleCanvasMouseDown(e) {
@@ -243,6 +265,9 @@ function renderNode(node, isSelected, isOnPath) {
     rect.setAttribute('width', dims.width);
     rect.setAttribute('height', dims.height);
     rect.setAttribute('rx', '0'); // Sharp corners
+    // Model-based border color (human nodes get grey)
+    const borderColor = node.type === 'human' ? '#888888' : getModelColor(node.model);
+    rect.setAttribute('stroke', borderColor);
     g.appendChild(rect);
 
     // Text content
@@ -476,6 +501,8 @@ function renderEdge(parentNode, childNode, isOnPath) {
 
 // Select a node
 function selectNode(nodeId) {
+    // Validate node exists before selecting
+    if (!appState.tree.nodes[nodeId]) return;
     appState.tree.selected_node_id = nodeId;
     renderTree();
     updateEditor();
