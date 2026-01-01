@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebLoom</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="index.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Left Sidebar: Settings -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <span class="sidebar-title">Settings</span>
+                <button class="sidebar-toggle" id="sidebar-collapse-btn" title="Collapse sidebar">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+            </div>
+
+            <div class="sidebar-content">
+                <!-- Model/Endpoint -->
+                <div class="control-group">
+                    <label>Model / Endpoint</label>
+                    <input type="text" id="model-input" value="moonshotai/kimi-k2"
+                        placeholder="provider/model or http://...">
+                    <div class="help-text">
+                        anthropic/claude-opus-4.5<br>
+                        moonshotai/kimi-k2::deepinfra<br>
+                        http://some-openai-compat-api.com/v1
+                    </div>
+                    <div class="detected-text">
+                        Detected: <span id="provider-detected">OpenRouter</span>
+                    </div>
+                </div>
+
+                <!-- API Key -->
+                <div class="control-group">
+                    <label>API Key</label>
+                    <input type="password" id="api-key-input" placeholder="Enter API key">
+                </div>
+
+                <!-- OAI Controls (hidden by default) -->
+                <div class="control-group oai-controls" id="oai-key-group" style="display: none;">
+                    <label>Session API Key</label>
+                    <input type="password" id="oai-api-key-input" placeholder="Optional, for this session">
+                </div>
+
+                <div class="control-group oai-controls" id="oai-model-group" style="display: none;">
+                    <label>Model Name</label>
+                    <input type="text" id="oai-model-input" placeholder="Model name (optional)">
+                </div>
+
+                <!-- Temperature -->
+                <div class="control-group">
+                    <label>
+                        Temperature
+                        <input type="number" class="value-input" id="temp-value" min="0" max="2" step="0.1" value="0.9">
+                    </label>
+                    <input type="range" id="temp-slider" min="0" max="2" step="0.1" value="0.9">
+                </div>
+
+                <!-- Min P -->
+                <div class="control-group">
+                    <label>
+                        Min P
+                        <input type="number" class="value-input" id="minp-value" min="0" max="1" step="0.01"
+                            value="0.01">
+                    </label>
+                    <input type="range" id="minp-slider" min="0" max="1" step="0.01" value="0.01">
+                </div>
+
+                <!-- Siblings -->
+                <div class="control-group">
+                    <label>Siblings</label>
+                    <input type="number" id="siblings-input" min="1" max="8" step="1" value="3">
+                </div>
+
+                <!-- Max Tokens -->
+                <div class="control-group">
+                    <label>Max Tokens</label>
+                    <input type="number" id="max-tokens-input" min="1" max="2000" step="1" value="32">
+                </div>
+
+                <!-- Untitled.txt Trick -->
+                <div class="control-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="untitled-toggle">
+                        <span>Untitled.txt Trick</span>
+                    </label>
+                </div>
+
+                <!-- Import/Export -->
+                <div class="control-group import-export-row">
+                    <button id="export-tree-btn" class="btn-half">Export Tree</button>
+                    <button id="import-tree-btn" class="btn-half">Import Tree</button>
+                    <input type="file" id="import-tree-input" accept=".json" style="display: none;">
+                </div>
+
+                <div class="sidebar-divider"></div>
+
+                <!-- Model Legend -->
+                <div class="control-group">
+                    <label>Collaborators</label>
+                    <div id="model-legend" class="model-legend">
+                        <div class="legend-empty">No models yet</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Collapsed Sidebar Toggle (top-left) -->
+        <button class="sidebar-expand-btn" id="sidebar-expand-btn" style="display: none;" title="Expand sidebar">
+            <i class="bi bi-list"></i>
+        </button>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Editor Panel (left) -->
+            <div class="panel editor-panel" id="editor-panel" data-panel="editor">
+                <div class="panel-header">
+                    <span class="panel-title" draggable="true" data-panel="editor">Editor</span>
+                </div>
+                <div class="panel-content">
+                    <div class="editor-container">
+                        <div id="editor" class="editor" contenteditable="true" spellcheck="false"
+                            placeholder="Create a seed node or start typing..."></div>
+                    </div>
+                </div>
+                <!-- Editor Bottom Bar -->
+                <div class="editor-bottom-bar">
+                    <button id="generate-btn" class="btn-action" title="Generate completions">
+                        <i class="bi bi-play-fill"></i>
+                        <span>Generate</span>
+                    </button>
+                    <button id="continue-btn" class="btn-icon-ghost" title="Continue (single completion)">
+                        <i class="bi bi-arrow-right"></i>
+                    </button>
+                    <button id="cancel-btn" class="btn-action btn-cancel" style="display: none;"
+                        title="Cancel generation">
+                        <i class="bi bi-stop-fill"></i>
+                        <span>Cancel</span>
+                    </button>
+                    <button id="reroll-btn" class="btn-icon-ghost" title="Reroll (regenerate siblings)">
+                        <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                    <button id="copy-text-btn" class="btn-icon-ghost" title="Copy text">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                    <button id="autoformat-btn" class="btn-icon-ghost" title="Autoformat tree">
+                        <i class="bi bi-diagram-3"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Resizer -->
+            <div class="panel-resizer" id="panel-resizer"></div>
+
+            <!-- Tree Panel (right) -->
+            <div class="panel tree-panel" id="tree-panel" data-panel="tree">
+                <div class="panel-header">
+                    <span class="panel-title" draggable="true" data-panel="tree">Tree</span>
+                </div>
+                <div class="panel-content">
+                    <svg id="tree-canvas" width="100%" height="100%">
+                        <defs>
+                            <pattern id="dot-grid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+                                <circle cx="1" cy="1" r="0.8" fill="#3c3c3c" opacity="0.5" />
+                            </pattern>
+                        </defs>
+                        <g id="tree-viewport" transform="translate(0,0) scale(1)">
+                            <rect id="tree-bg" x="-10000" y="-10000" width="20000" height="20000"
+                                fill="url(#dot-grid)" />
+                            <g id="tree-edges"></g>
+                            <g id="tree-nodes"></g>
+                        </g>
+                    </svg>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Bottom Bar (stats only) -->
+    <footer class="bottom-bar">
+        <div class="bottom-left">
+            <span class="stat" id="model-display">moonshotai/kimi-k2</span>
+        </div>
+        <div class="bottom-right">
+            <span class="stat" id="char-count">0 chars</span>
+            <span class="stat" id="token-count">~0 tokens</span>
+            <span class="stat" id="node-count">0 nodes</span>
+        </div>
+    </footer>
+
+    <!-- Error Toast -->
+    <div class="toast-container">
+        <div id="error-toast" class="toast" role="alert">
+            <div class="toast-header">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <strong>Error</strong>
+                <button class="toast-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="toast-body" id="error-toast-body"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="tree.js"></script>
+    <script src="api.js"></script>
+    <script src="generation.js"></script>
+    <script src="tree-view.js"></script>
+    <script src="editor.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
