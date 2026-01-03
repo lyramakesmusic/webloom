@@ -179,7 +179,8 @@ function handleEditorInput(e) {
     const editor = e.target;
     // innerText can return trailing \n for empty lines or after <br>, normalize it
     let newText = editor.innerText || '';
-    newText = newText.replace(/\n$/, '');
+    // Normalize line endings: \r\n → \n, lone \r → \n, strip trailing browser-added \n
+    newText = newText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n$/, '');
     const oldText = editorState.segments.map(s => s.text).join('');
 
     // Find what changed
@@ -496,10 +497,34 @@ function maybeRemoveEmptyNode(node) {
     editorState.structureChanged = true;
     const nodes = appState.tree.nodes;
 
-    // If root node is emptied, clear entire tree
+    // If root node is emptied, promote child on selected branch to new root
     if (!node.parent_id) {
-        Object.keys(nodes).forEach(id => delete nodes[id]);
-        appState.tree.selected_node_id = null;
+        const children = getChildren(nodes, node.id);
+        if (children.length === 0) {
+            // No children - actually clear the tree
+            Object.keys(nodes).forEach(id => delete nodes[id]);
+            appState.tree.selected_node_id = null;
+            return;
+        }
+
+        // Find child on path to selected node (or first child if root was selected)
+        let newRoot = children[0];
+        if (appState.tree.selected_node_id && appState.tree.selected_node_id !== node.id) {
+            const path = getPathToNode(nodes, appState.tree.selected_node_id);
+            // path[0] is root, path[1] is the child we want
+            if (path.length > 1 && path[0].id === node.id) {
+                newRoot = path[1];
+            }
+        }
+
+        // Promote child to root
+        newRoot.parent_id = null;
+        delete nodes[node.id];
+
+        // Update selection if it was on the old root
+        if (appState.tree.selected_node_id === node.id) {
+            appState.tree.selected_node_id = newRoot.id;
+        }
         return;
     }
 
@@ -587,11 +612,31 @@ function refreshSegments() {
     });
 }
 
-// Handle paste - plain text only
+// Handle paste - plain text only, normalize line endings
 function handleEditorPaste(e) {
     e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
-    document.execCommand('insertText', false, text);
+    let text = e.clipboardData.getData('text/plain');
+    // Normalize line endings: \r\n → \n, lone \r → \n
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    const selection = window.getSelection();
+    if (!selection.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+
+    const textNode = document.createTextNode(text);
+    range.insertNode(textNode);
+
+    // Move cursor to end of inserted text
+    range.setStartAfter(textNode);
+    range.setEndAfter(textNode);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    // Trigger input event for tree sync
+    const editor = document.getElementById('editor');
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 // Handle dragover - required to allow drop
@@ -600,22 +645,34 @@ function handleEditorDragover(e) {
     e.dataTransfer.dropEffect = 'copy';
 }
 
-// Handle drop - plain text only
+// Handle drop - plain text only, normalize line endings
 function handleEditorDrop(e) {
     e.preventDefault();
-    const text = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text');
+    let text = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text');
     if (!text) return;
+
+    // Normalize line endings
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
     // Position cursor at drop point
     const range = document.caretRangeFromPoint(e.clientX, e.clientY);
-    if (range) {
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-    }
+    if (!range) return;
 
-    // Insert plain text
-    document.execCommand('insertText', false, text);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    range.deleteContents();
+    const textNode = document.createTextNode(text);
+    range.insertNode(textNode);
+
+    range.setStartAfter(textNode);
+    range.setEndAfter(textNode);
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    const editor = document.getElementById('editor');
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 // Handle keyboard shortcuts
@@ -810,6 +867,6 @@ function updateModelLegend() {
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
-    // Replace newlines with <br> so they render correctly
-    return div.innerHTML.replace(/\n/g, '<br>');
+    // Normalize line endings and convert to <br>
+    return div.innerHTML.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '<br>');
 }
