@@ -5,7 +5,9 @@ let editorState = {
     nodeId: null,          // Currently displayed node path endpoint
     segments: [],          // Array of { nodeId, start, end, text } for tracking
     isUpdating: false,     // Prevent recursive updates
-    structureChanged: false // Track if tree structure changed (needs full re-render)
+    structureChanged: false, // Track if tree structure changed (needs full re-render)
+    selectionStart: 0,     // Selection start before input (for replace detection)
+    selectionEnd: 0        // Selection end before input
 };
 
 // Debounced save/render for performance
@@ -68,6 +70,9 @@ function initEditor() {
     const editor = document.getElementById('editor');
     if (!editor) return;
 
+    // Capture selection BEFORE input (for detecting replace operations)
+    editor.addEventListener('beforeinput', handleEditorBeforeInput);
+
     // Input handler for user edits
     editor.addEventListener('input', handleEditorInput);
 
@@ -78,6 +83,24 @@ function initEditor() {
 
     // Keyboard shortcuts
     editor.addEventListener('keydown', handleEditorKeydown);
+}
+
+// Capture selection before input for accurate replace detection
+function handleEditorBeforeInput(e) {
+    const editor = e.target;
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        editorState.selectionStart = getAbsoluteOffset(editor, range.startContainer, range.startOffset);
+        editorState.selectionEnd = getAbsoluteOffset(editor, range.endContainer, range.endOffset);
+        const selLen = editorState.selectionEnd - editorState.selectionStart;
+        if (selLen > 0) {
+            console.log('[editor] beforeinput captured selection:', editorState.selectionStart, '-', editorState.selectionEnd, '(len:', selLen + ')');
+        }
+    } else {
+        editorState.selectionStart = 0;
+        editorState.selectionEnd = 0;
+    }
 }
 
 // Update editor to show text for selected node
@@ -114,7 +137,8 @@ function updateEditor(skipCursorRestore = false) {
     let position = 0;
 
     path.forEach(node => {
-        const text = node.text || '';
+        // Normalize text to ensure consistent positions (handles imported \r\n)
+        const text = (node.text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         if (text) {
             editorState.segments.push({
                 nodeId: node.id,
@@ -177,14 +201,77 @@ function handleEditorInput(e) {
     if (editorState.isUpdating) return;
 
     const editor = e.target;
+
+    // Capture cursor position BEFORE processing (after browser's DOM update)
+    // Cursor is positioned right after any inserted text
+    const selection = window.getSelection();
+    let cursorAfterInput = 0;
+    if (selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        cursorAfterInput = getAbsoluteOffset(editor, range.startContainer, range.startOffset);
+    }
+
     // innerText can return trailing \n for empty lines or after <br>, normalize it
     let newText = editor.innerText || '';
     // Normalize line endings: \r\n → \n, lone \r → \n, strip trailing browser-added \n
     newText = newText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n$/, '');
-    const oldText = editorState.segments.map(s => s.text).join('');
+    // Also normalize oldText - node text may have \r\n from imported files
+    let oldText = editorState.segments.map(s => s.text).join('');
+    oldText = oldText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    // Debug: detect large text mismatch
+    if (Math.abs(newText.length - oldText.length) > 100) {
+        console.warn('[editor] Large text delta detected:', {
+            oldLen: oldText.length,
+            newLen: newText.length,
+            delta: newText.length - oldText.length,
+            segments: editorState.segments.length,
+            selectedId: appState.tree.selected_node_id
+        });
+    }
 
     // Find what changed
     const changes = findChanges(oldText, newText);
+
+    // Fix character collision in diff: when inserted/replaced char matches existing char,
+    // diff reports wrong position. Use cursor/selection to find true location.
+    if (changes.type === 'insert' && cursorAfterInput > 0) {
+        // For inserts: cursor is right AFTER inserted text
+        const trueStart = cursorAfterInput - changes.text.length;
+        if (trueStart >= 0 && trueStart !== changes.start) {
+            console.log('[editor] correcting insert position from', changes.start, 'to', trueStart, '(cursor at', cursorAfterInput + ')');
+            changes.start = trueStart;
+        }
+    } else if (changes.type === 'replace' || changes.type === 'delete') {
+        // For replacements/deletes: use captured selection from beforeinput event
+        // Note: a "delete" might actually be a replace where typed char matched deleted char
+        const selectionLength = editorState.selectionEnd - editorState.selectionStart;
+
+        if (selectionLength > 0) {
+            // User had a selection - this is a replace operation
+            const typedLength = newText.length - oldText.length + selectionLength;
+            const trueInsertText = typedLength > 0
+                ? newText.substring(editorState.selectionStart, editorState.selectionStart + typedLength)
+                : '';
+
+            // Check if we need to correct anything
+            const needsCorrection = changes.type === 'delete' ||
+                                   changes.start !== editorState.selectionStart ||
+                                   (changes.type === 'replace' && changes.deleteCount !== selectionLength);
+
+            if (needsCorrection) {
+                console.log('[editor] correcting', changes.type, '→ replace: start', changes.start, '→', editorState.selectionStart,
+                            ', deleteCount', changes.deleteCount || changes.count, '→', selectionLength,
+                            ', insertText "' + (changes.insertText || '') + '" → "' + trueInsertText + '"');
+                changes.type = 'replace';
+                changes.start = editorState.selectionStart;
+                changes.deleteCount = selectionLength;
+                changes.insertText = trueInsertText;
+                delete changes.count; // Remove delete-style count if present
+            }
+        }
+    }
+
 
     if (changes.type === 'none') return;
 
@@ -204,6 +291,8 @@ function handleEditorInput(e) {
 
     // Update segments to match tree
     refreshSegments();
+    const newTotalLen = editorState.segments.reduce((sum, s) => sum + (s.text?.length || 0), 0);
+    console.log('[editor] after refresh, segment total len:', newTotalLen, 'expected (old + change):', oldText.length + (changes.type === 'insert' ? changes.text.length : changes.type === 'delete' ? -changes.count : changes.insertText.length - changes.deleteCount));
 
     // Debounced save and tree render
     debouncedSave();
@@ -219,12 +308,11 @@ function handleEditorInput(e) {
         } else if (changes.type === 'replace') {
             cursorPos = changes.start + changes.insertText.length;
         }
+        console.log('[editor] structure changed, restoring cursor to:', cursorPos, 'change was at:', changes.start);
 
-        // Reposition siblings
-        const path = getPathToNode(appState.tree.nodes, appState.tree.selected_node_id);
-        path.forEach(node => {
-            if (node.parent_id) repositionSiblings(node.parent_id);
-        });
+        // Reposition from root once (repositionSiblings is recursive)
+        const root = findRoot(appState.tree.nodes);
+        if (root) repositionSiblings(root.id);
 
         updateEditor(true);
         placeCursorAtPosition(cursorPos);
@@ -319,6 +407,7 @@ function applyChangesToTree(changes, oldText, newText) {
 // Handle text insertion
 function handleInsert(position, text) {
     const segment = findSegmentAtPosition(position);
+    console.log('[editor] handleInsert:', { position, textLen: text.length, segmentNodeId: segment?.nodeId, segmentStart: segment?.start, segmentEnd: segment?.end });
 
     if (!segment) {
         // Append to end of last node, or create new root
@@ -339,9 +428,13 @@ function handleInsert(position, text) {
     const nodeOffset = position - segment.start;
 
     if (node.type === 'human') {
-        const nodeText = node.text || '';
+        // Normalize node text to match diff positions (handles imported \r\n)
+        const nodeText = (node.text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        node.text = nodeText; // Store normalized version
         const atEnd = nodeOffset >= nodeText.length;
-        const hasChildren = getChildren(appState.tree.nodes, node.id).length > 0;
+        const children = getChildren(appState.tree.nodes, node.id);
+        const hasChildren = children.length > 0;
+        console.log('[editor] human node insert:', { nodeId: node.id, nodeText, nodeOffset, atEnd, hasChildren, childIds: children.map(c => c.id) });
 
         // If appending to end of human node that has children, create new human child
         // This preserves context for existing generations
@@ -353,7 +446,6 @@ function handleInsert(position, text) {
             }, {});
             appState.tree.nodes[newNode.id] = newNode;
             appState.tree.selected_node_id = newNode.id;
-            repositionSiblings(node.id);
             return;
         }
 
@@ -366,17 +458,22 @@ function handleInsert(position, text) {
         const segmentIndex = editorState.segments.indexOf(segment);
 
         // At start of AI node - append to previous human node if exists
+        // Note: Always append here (don't create child) to preserve AI continuation in path
         if (nodeOffset === 0 && segmentIndex > 0) {
             const prevSegment = editorState.segments[segmentIndex - 1];
             const prevNode = appState.tree.nodes[prevSegment.nodeId];
             if (prevNode && prevNode.type === 'human') {
+                console.log('[editor] AI boundary insert: appending to', prevNode.id);
                 prevNode.text = (prevNode.text || '') + text;
                 return;
             }
         }
 
+        // Normalize AI node text to match diff positions
+        node.text = (node.text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
         // At end of AI node - prepend to next human node if exists
-        if (nodeOffset === (node.text || '').length && segmentIndex < editorState.segments.length - 1) {
+        if (nodeOffset === node.text.length && segmentIndex < editorState.segments.length - 1) {
             const nextSegment = editorState.segments[segmentIndex + 1];
             const nextNode = appState.tree.nodes[nextSegment.nodeId];
             if (nextNode && nextNode.type === 'human') {
@@ -392,8 +489,13 @@ function handleInsert(position, text) {
 
 // Split an AI node to insert human text
 function splitNodeForInsertion(node, offset, insertText) {
+    console.log('[editor] splitNodeForInsertion:', { nodeId: node.id, nodeType: node.type, offset, insertTextLen: insertText.length });
     editorState.structureChanged = true;
     const nodes = appState.tree.nodes;
+
+    // Normalize node text to match diff positions (handles imported \r\n)
+    node.text = (node.text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
     const beforeText = node.text.substring(0, offset);
     const afterText = node.text.substring(offset);
     const originalSelectedId = appState.tree.selected_node_id;
@@ -412,6 +514,20 @@ function splitNodeForInsertion(node, offset, insertText) {
             if (originalSelectedId === node.id) {
                 appState.tree.selected_node_id = newNode.id;
             }
+        }
+        return;
+    }
+
+    // Special case: inserting at very start (offset 0) - create sibling, don't empty the node
+    if (!beforeText && node.parent_id) {
+        // Create human node as sibling (same parent as AI node)
+        const humanNode = createNode(node.parent_id, insertText, 'human', null, {
+            x: node.position.x,
+            y: node.position.y - 40
+        }, {});
+        nodes[humanNode.id] = humanNode;
+        if (originalSelectedId === node.id) {
+            appState.tree.selected_node_id = humanNode.id;
         }
         return;
     }
@@ -451,16 +567,13 @@ function splitNodeForInsertion(node, offset, insertText) {
     if (originalSelectedId === node.id) {
         appState.tree.selected_node_id = afterNode.id;
     }
-
-    // Reposition siblings of the split node and its new children
-    if (node.parent_id) repositionSiblings(node.parent_id);
-    repositionSiblings(node.id);
-    repositionSiblings(humanNode.id);
+    // Note: repositionSiblings is called from root after structure changes
 }
 
 // Handle text deletion
 function handleDelete(position, count) {
     const endPosition = position + count;
+    console.log('[editor] handleDelete:', { position, count, endPosition });
 
     // Compute all deletions upfront from current segments (avoids stale iteration)
     const deletions = [];
@@ -482,6 +595,9 @@ function handleDelete(position, count) {
         const node = appState.tree.nodes[del.nodeId];
         if (!node) continue;
 
+        // Normalize node text to match diff positions (handles imported \r\n)
+        node.text = (node.text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
         const before = node.text.substring(0, del.startOffset);
         const after = node.text.substring(del.endOffset);
         node.text = before + after;
@@ -494,6 +610,7 @@ function handleDelete(position, count) {
 
 // Remove empty node, reparenting children to grandparent
 function maybeRemoveEmptyNode(node) {
+    console.log('[editor] maybeRemoveEmptyNode:', { nodeId: node.id, type: node.type, hasParent: !!node.parent_id });
     editorState.structureChanged = true;
     const nodes = appState.tree.nodes;
 
@@ -594,7 +711,8 @@ function refreshSegments() {
     let position = 0;
 
     path.forEach(node => {
-        const text = node.text || '';
+        // Normalize text to ensure consistent positions (handles imported \r\n)
+        const text = (node.text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         if (text) {
             editorState.segments.push({
                 nodeId: node.id,
@@ -768,6 +886,16 @@ function placeCursorAtPosition(offset) {
 // Restore cursor position (handles <br> as \n)
 function restoreCursorPosition(container, offset) {
     let remaining = offset;
+    const totalTextLen = container.innerText?.length;
+    console.log('[editor] restoreCursorPosition: target offset', offset, 'totalTextLen:', totalTextLen);
+
+    // Safety check: if offset is beyond text length, place at end
+    if (offset > totalTextLen) {
+        console.warn('[editor] cursor offset', offset, 'exceeds text length', totalTextLen, '- placing at end');
+        offset = totalTextLen;
+        remaining = offset;
+    }
+
     const walker = document.createTreeWalker(
         container,
         NodeFilter.SHOW_ALL,
@@ -777,9 +905,12 @@ function restoreCursorPosition(container, offset) {
 
     let current;
     let lastTextNode = null;
+    let debugPos = 0;
+    let brCount = 0;
     while ((current = walker.nextNode())) {
         if (current.nodeType === Node.TEXT_NODE) {
             if (remaining <= current.textContent.length) {
+                console.log('[editor] placing cursor: debugPos', debugPos, 'brCount', brCount, 'remaining', remaining, 'nodeLen', current.textContent.length, 'final pos:', debugPos + brCount + remaining);
                 const range = document.createRange();
                 range.setStart(current, remaining);
                 range.collapse(true);
@@ -790,8 +921,11 @@ function restoreCursorPosition(container, offset) {
                 return;
             }
             remaining -= current.textContent.length;
+            debugPos += current.textContent.length;
             lastTextNode = current;
         } else if (current.nodeName === 'BR') {
+            brCount++;
+            debugPos++; // BR counts as 1 char (\n in innerText)
             if (remaining <= 1) {
                 // Position after the <br>
                 const range = document.createRange();
