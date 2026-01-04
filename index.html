@@ -157,17 +157,19 @@
                 </div>
                 <!-- Editor Bottom Bar -->
                 <div class="editor-bottom-bar">
-                    <button id="generate-btn" class="btn-action" title="Generate completions">
-                        <i class="bi bi-play-fill"></i>
-                        <span>Generate</span>
-                    </button>
+                    <div class="generate-cancel-container">
+                        <button id="generate-btn" class="btn-action" title="Generate completions">
+                            <i class="bi bi-play-fill"></i>
+                            <span>Generate</span>
+                        </button>
+                        <button id="cancel-btn" class="btn-action btn-cancel" style="display: none;"
+                            title="Cancel generation">
+                            <i class="bi bi-stop-fill"></i>
+                            <span>Cancel</span>
+                        </button>
+                    </div>
                     <button id="continue-btn" class="btn-icon-ghost" title="Continue (single completion)">
                         <i class="bi bi-arrow-right"></i>
-                    </button>
-                    <button id="cancel-btn" class="btn-action btn-cancel" style="display: none;"
-                        title="Cancel generation">
-                        <i class="bi bi-stop-fill"></i>
-                        <span>Cancel</span>
                     </button>
                     <button id="reroll-btn" class="btn-icon-ghost" title="Reroll (regenerate siblings)">
                         <i class="bi bi-arrow-repeat"></i>

@@ -753,6 +753,15 @@ body.canvas-dragging * {
     background-color: var(--bg-dark);
 }
 
+.generate-cancel-container {
+    position: relative;
+    display: grid;
+}
+
+.generate-cancel-container .btn-action {
+    grid-area: 1 / 1;
+}
+
 .editor-bar-spacer {
     flex: 1;
 }
