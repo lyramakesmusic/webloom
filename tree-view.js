@@ -14,11 +14,14 @@ function initTreeCanvas() {
     const svg = document.getElementById('tree-canvas');
     if (!svg) return;
 
-    // Pan and zoom handlers
+    // Pan: mousedown/move on SVG, stop on leave/up, blur catches tab switches
     svg.addEventListener('mousedown', handleCanvasMouseDown);
     svg.addEventListener('mousemove', handleCanvasMouseMove);
     svg.addEventListener('mouseup', handleCanvasMouseUp);
     svg.addEventListener('mouseleave', handleCanvasMouseUp);
+    window.addEventListener('blur', handleCanvasMouseUp);
+
+    // Zoom
     svg.addEventListener('wheel', handleCanvasWheel, { passive: false });
 
     // Touch support
@@ -50,31 +53,30 @@ function resetView() {
 }
 
 function handleCanvasMouseDown(e) {
-    // Only pan when clicking on background
+    // Only pan when clicking on background (not nodes)
     if (e.target.id === 'tree-bg' || e.target.id === 'tree-canvas') {
         treeCanvas.isDragging = true;
         treeCanvas.dragStart = { x: e.clientX, y: e.clientY };
         treeCanvas.panStart = { ...treeCanvas.pan };
         e.currentTarget.classList.add('dragging');
+        document.body.classList.add('canvas-dragging'); // Prevent text selection
+        e.preventDefault();
     }
 }
 
 function handleCanvasMouseMove(e) {
     if (!treeCanvas.isDragging) return;
 
-    const dx = e.clientX - treeCanvas.dragStart.x;
-    const dy = e.clientY - treeCanvas.dragStart.y;
-
-    treeCanvas.pan.x = treeCanvas.panStart.x + dx;
-    treeCanvas.pan.y = treeCanvas.panStart.y + dy;
-
+    treeCanvas.pan.x = treeCanvas.panStart.x + (e.clientX - treeCanvas.dragStart.x);
+    treeCanvas.pan.y = treeCanvas.panStart.y + (e.clientY - treeCanvas.dragStart.y);
     updateTreeViewport();
 }
 
-function handleCanvasMouseUp(e) {
+function handleCanvasMouseUp() {
     if (treeCanvas.isDragging) {
         treeCanvas.isDragging = false;
         document.getElementById('tree-canvas')?.classList.remove('dragging');
+        document.body.classList.remove('canvas-dragging');
         saveUIState();
     }
 }
@@ -239,12 +241,17 @@ function renderTree() {
         }
     });
 
-    // Render nodes
+    // Render nodes (with hidden branch indicators)
     Object.values(nodes).forEach(node => {
         if (visibleIds.has(node.id)) {
             const isSelected = node.id === selectedId;
             const isOnPath = focusedPath.has(node.id);
-            const nodeElement = renderNode(node, isSelected, isOnPath);
+
+            // Check for hidden children to show indicator
+            const allChildren = getChildren(nodes, node.id);
+            const hiddenChildren = allChildren.filter(child => !visibleIds.has(child.id));
+
+            const nodeElement = renderNode(node, isSelected, isOnPath, hiddenChildren, nodes);
             nodesContainer.appendChild(nodeElement);
         }
     });
@@ -254,13 +261,14 @@ function renderTree() {
 }
 
 // Render a single node
-function renderNode(node, isSelected, isOnPath) {
+function renderNode(node, isSelected, isOnPath, hiddenChildren = [], nodes = {}) {
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'tree-node' +
         (isSelected ? ' selected' : '') +
         (isOnPath ? ' on-path' : '') +
         (node.loading ? ' loading' : '') +
-        (node.error ? ' error' : '')
+        (node.error ? ' error' : '') +
+        (hiddenChildren.length > 0 ? ' has-hidden' : '')
     );
     g.setAttribute('data-node-id', node.id);
     g.setAttribute('transform', `translate(${node.position.x},${node.position.y})`);
@@ -286,6 +294,63 @@ function renderNode(node, isSelected, isOnPath) {
     const borderColor = node.type === 'human' ? '#888888' : getModelColor(node.model);
     rect.setAttribute('stroke', borderColor);
     g.appendChild(rect);
+
+    // Hidden branches indicator (inside node, right-center edge)
+    if (hiddenChildren.length > 0) {
+        let totalHidden = 0;
+        hiddenChildren.forEach(child => {
+            totalHidden += 1 + getDescendants(nodes, child.id).length;
+        });
+
+        const indicatorGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        indicatorGroup.setAttribute('class', 'hidden-indicator');
+        indicatorGroup.setAttribute('transform', `translate(${dims.width - 22}, ${dims.height / 2})`);
+        indicatorGroup.style.cursor = 'pointer';
+
+        // Small pill background
+        const pillW = 28, pillH = 16;
+        const pill = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        pill.setAttribute('x', -pillW / 2);
+        pill.setAttribute('y', -pillH / 2);
+        pill.setAttribute('width', pillW);
+        pill.setAttribute('height', pillH);
+        pill.setAttribute('rx', pillH / 2);
+        pill.setAttribute('fill', '#444');
+        pill.setAttribute('stroke', '#666');
+        pill.setAttribute('stroke-width', '1');
+        indicatorGroup.appendChild(pill);
+
+        // "+N" text
+        const countText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        countText.setAttribute('x', 0);
+        countText.setAttribute('y', 4);
+        countText.setAttribute('text-anchor', 'middle');
+        countText.setAttribute('fill', '#aaa');
+        countText.setAttribute('font-size', '10');
+        countText.setAttribute('font-weight', 'bold');
+        countText.textContent = `+${totalHidden}`;
+        indicatorGroup.appendChild(countText);
+
+        // Tooltip
+        const indTitle = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        indTitle.textContent = `${hiddenChildren.length} hidden branch${hiddenChildren.length > 1 ? 'es' : ''}\nClick to expand`;
+        indicatorGroup.appendChild(indTitle);
+
+        // Click handler
+        indicatorGroup.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (hiddenChildren.length > 0) {
+                let target = hiddenChildren[0];
+                const descendants = getDescendants(nodes, target.id);
+                if (descendants.length > 0) {
+                    target = descendants[descendants.length - 1];
+                }
+                selectNode(target.id);
+            }
+        });
+
+        g.appendChild(indicatorGroup);
+    }
 
     // Text content
     const displayText = node.loading ? '⟳ generating...' : (node.text || '');

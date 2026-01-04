@@ -60,6 +60,144 @@ function redo() {
     saveTree();
 }
 
+// Split node at current cursor position (for split button)
+function splitAtCursor() {
+    const editor = document.getElementById('editor');
+    if (!editor) return;
+
+    const selection = window.getSelection();
+    if (!selection.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    const cursorPos = getAbsoluteOffset(editor, range.startContainer, range.startOffset);
+
+    // Don't split at position 0 or at the very end
+    const totalLen = editorState.segments.reduce((sum, s) => sum + (s.text?.length || 0), 0);
+    if (cursorPos <= 0 || cursorPos >= totalLen) {
+        console.log('[editor] splitAtCursor: cannot split at boundary', { cursorPos, totalLen });
+        return;
+    }
+
+    console.log('[editor] splitAtCursor at position:', cursorPos);
+
+    // Save state for undo
+    pushUndoState();
+
+    // Use branching edit with no delete and no insert - just split
+    handleBranchingEdit(cursorPos, 0, '');
+
+    // Refresh, reformat, and re-render
+    refreshSegments();
+    autoformatTree(appState.tree.nodes);
+    saveTree();
+    renderTree();
+    updateEditor(true);
+
+    // Place cursor at the split point (end of the branch point node)
+    const branchPointLen = editorState.segments.reduce((sum, s) => sum + (s.text?.length || 0), 0);
+    placeCursorAtPosition(branchPointLen);
+}
+
+// Generate from cursor position - splits first if cursor is not at end
+// When n=1, auto-selects the result like continue
+async function generateFromCursor() {
+    const editor = document.getElementById('editor');
+    const selectedId = appState.tree.selected_node_id;
+
+    if (!selectedId) {
+        showError('No node selected');
+        return;
+    }
+
+    // Get cursor position and total length
+    let cursorPos = 0;
+    const totalLen = editorState.segments.reduce((sum, s) => sum + (s.text?.length || 0), 0);
+
+    if (editor) {
+        const selection = window.getSelection();
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            cursorPos = getAbsoluteOffset(editor, range.startContainer, range.startOffset);
+        }
+    }
+
+    // If cursor is not at the end, split first
+    if (cursorPos > 0 && cursorPos < totalLen) {
+        console.log('[editor] generateFromCursor: splitting at', cursorPos, 'of', totalLen);
+        pushUndoState();
+        handleBranchingEdit(cursorPos, 0, '');
+        refreshSegments();
+        autoformatTree(appState.tree.nodes);
+        saveTree();
+        renderTree();
+        updateEditor(true);
+    }
+
+    // Generate from the (possibly new) selected node
+    const generateFromId = appState.tree.selected_node_id;
+    if (generateFromId) {
+        const n = parseInt(document.getElementById('siblings-input').value) || 3;
+        await generateCompletions(generateFromId);
+
+        // When n=1, auto-select the result like continue
+        if (n === 1) {
+            const children = getChildren(appState.tree.nodes, generateFromId);
+            if (children.length > 0) {
+                const newestChild = children[children.length - 1];
+                selectNode(newestChild.id);
+            }
+        }
+    }
+}
+
+// Continue from cursor - splits first if needed, generates single completion, selects it
+async function continueFromCursor() {
+    const editor = document.getElementById('editor');
+    const selectedId = appState.tree.selected_node_id;
+
+    if (!selectedId) {
+        showError('No node selected');
+        return;
+    }
+
+    // Get cursor position and total length
+    let cursorPos = 0;
+    const totalLen = editorState.segments.reduce((sum, s) => sum + (s.text?.length || 0), 0);
+
+    if (editor) {
+        const selection = window.getSelection();
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            cursorPos = getAbsoluteOffset(editor, range.startContainer, range.startOffset);
+        }
+    }
+
+    // If cursor is not at the end, split first
+    if (cursorPos > 0 && cursorPos < totalLen) {
+        console.log('[editor] continueFromCursor: splitting at', cursorPos, 'of', totalLen);
+        pushUndoState();
+        handleBranchingEdit(cursorPos, 0, '');
+        refreshSegments();
+        autoformatTree(appState.tree.nodes);
+        saveTree();
+        renderTree();
+        updateEditor(true);
+    }
+
+    // Generate single completion from the (possibly new) selected node
+    const generateFromId = appState.tree.selected_node_id;
+    if (generateFromId) {
+        await generateCompletions(generateFromId, 1);
+        // Select the spawned node and update editor
+        const children = getChildren(appState.tree.nodes, generateFromId);
+        if (children.length > 0) {
+            const newestChild = children[children.length - 1];
+            selectNode(newestChild.id);
+            updateEditor(true);
+        }
+    }
+}
+
 function debouncedRenderTree() {
     clearTimeout(renderDebounceTimer);
     renderDebounceTimer = setTimeout(() => renderTree(), RENDER_DEBOUNCE_MS);
@@ -390,14 +528,33 @@ function applyChangesToTree(changes, oldText, newText) {
 
     if (!selectedNode) return;
 
+    // Check if there was a selection (for deciding branch vs normal delete)
+    const hadSelection = (editorState.selectionEnd - editorState.selectionStart) > 0;
+
+    // Check if delete/replace is in an AI node (always branch in AI nodes)
+    const isInAINode = isPositionInAINode(changes.start);
+
     // Find which segment(s) are affected
     if (changes.type === 'insert') {
         handleInsert(changes.start, changes.text);
     } else if (changes.type === 'delete') {
-        handleDelete(changes.start, changes.count);
+        // Branch if: had selection OR in AI node OR delete would empty a node
+        const shouldBranch = hadSelection || isInAINode || wouldDeleteEmptyNode(changes.start, changes.count);
+        if (shouldBranch) {
+            handleBranchingEdit(changes.start, changes.count, '');
+        } else {
+            // Normal destructive delete (single char backspace in human node)
+            handleDestructiveDelete(changes.start, changes.count);
+        }
     } else if (changes.type === 'replace') {
-        handleDelete(changes.start, changes.deleteCount);
-        handleInsert(changes.start, changes.insertText);
+        // Branch if: had selection OR in AI node
+        if (hadSelection || isInAINode) {
+            handleBranchingEdit(changes.start, changes.deleteCount, changes.insertText);
+        } else {
+            // No selection in human node - just do destructive delete then insert
+            handleDestructiveDelete(changes.start, changes.deleteCount);
+            handleInsert(changes.start, changes.insertText);
+        }
     }
 
     // Refresh segments
@@ -417,12 +574,25 @@ function handleInsert(position, text) {
             if (node) {
                 node.text = (node.text || '') + text;
             }
+        } else {
+            // No segments and no selected node (tree was cleared) - create new root
+            editorState.structureChanged = true;
+            const root = createNode(null, text, 'human', null, { x: 100, y: 200 }, {});
+            appState.tree.nodes[root.id] = root;
+            appState.tree.selected_node_id = root.id;
         }
         return;
     }
 
     const node = appState.tree.nodes[segment.nodeId];
-    if (!node) return;
+    if (!node) {
+        // Stale segment pointing to deleted node - create new root
+        editorState.structureChanged = true;
+        const root = createNode(null, text, 'human', null, { x: 100, y: 200 }, {});
+        appState.tree.nodes[root.id] = root;
+        appState.tree.selected_node_id = root.id;
+        return;
+    }
 
     // Calculate position within this node's text
     const nodeOffset = position - segment.start;
@@ -570,10 +740,166 @@ function splitNodeForInsertion(node, offset, insertText) {
     // Note: repositionSiblings is called from root after structure changes
 }
 
-// Handle text deletion
-function handleDelete(position, count) {
+// Handle branching edit: split tree at position, preserve original as branch, optionally add new text as sibling
+// This is non-destructive - original content is never deleted, just branched off
+function handleBranchingEdit(position, deleteCount, insertText) {
+    console.log('[editor] handleBranchingEdit:', { position, deleteCount, insertTextLen: insertText?.length || 0 });
+    editorState.structureChanged = true;
+    const nodes = appState.tree.nodes;
+
+    const segment = findSegmentAtPosition(position);
+    if (!segment) {
+        // No content exists - just create new root if we have text
+        if (insertText) {
+            const root = createNode(null, insertText, 'human', null, { x: 100, y: 200 }, {});
+            nodes[root.id] = root;
+            appState.tree.selected_node_id = root.id;
+        }
+        return;
+    }
+
+    const node = nodes[segment.nodeId];
+    if (!node) {
+        // Stale segment - create new root if we have text
+        if (insertText) {
+            const root = createNode(null, insertText, 'human', null, { x: 100, y: 200 }, {});
+            nodes[root.id] = root;
+            appState.tree.selected_node_id = root.id;
+        }
+        return;
+    }
+
+    // Normalize node text
+    node.text = (node.text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const offsetInNode = position - segment.start;
+    let branchPoint;
+
+    if (offsetInNode > 0) {
+        // Selection starts in middle of node - split it
+        const textBefore = node.text.substring(0, offsetInNode);
+        const textAfter = node.text.substring(offsetInNode);
+
+        // Keep textBefore in original node
+        node.text = textBefore;
+
+        // Get existing children before we modify anything
+        const existingChildren = getChildren(nodes, node.id);
+
+        if (textAfter || existingChildren.length > 0) {
+            // Create continuation node with textAfter (preserves original content as branch)
+            const contNode = createNode(node.id, textAfter, node.type, node.model, {
+                x: node.position.x + 160,
+                y: node.position.y
+            }, {
+                temperature: node.temperature,
+                min_p: node.min_p,
+                max_tokens: node.max_tokens
+            });
+            contNode.splitFrom = node.id;
+            nodes[contNode.id] = contNode;
+
+            // Reparent original children to continuation node
+            existingChildren.forEach(child => {
+                child.parent_id = contNode.id;
+            });
+        }
+
+        branchPoint = node;
+    } else {
+        // Selection starts at beginning of node - branch point is parent
+        if (node.parent_id) {
+            branchPoint = nodes[node.parent_id];
+        } else {
+            // Node is root and selection starts at 0 - create empty root as parent
+            const emptyRoot = createNode(null, '', 'human', null, {
+                x: node.position.x - 160,
+                y: node.position.y
+            }, {});
+            nodes[emptyRoot.id] = emptyRoot;
+            node.parent_id = emptyRoot.id;
+            branchPoint = emptyRoot;
+        }
+    }
+
+    // Create new node with inserted text as sibling of preserved branch
+    if (insertText && branchPoint) {
+        const newNode = createNode(branchPoint.id, insertText, 'human', null, {
+            x: branchPoint.position.x + 160,
+            y: branchPoint.position.y + 60
+        }, {});
+        nodes[newNode.id] = newNode;
+        appState.tree.selected_node_id = newNode.id;
+    } else if (branchPoint) {
+        // Pure split/delete (no new text)
+        // If branch point is empty, select its first child instead (the preserved content)
+        const branchPointText = (branchPoint.text || '').trim();
+        if (!branchPointText) {
+            const children = getChildren(nodes, branchPoint.id);
+            if (children.length > 0) {
+                // Select the preserved content branch, not the empty parent
+                appState.tree.selected_node_id = children[0].id;
+            } else {
+                appState.tree.selected_node_id = branchPoint.id;
+            }
+        } else {
+            appState.tree.selected_node_id = branchPoint.id;
+        }
+    }
+}
+
+// Check if a position is inside an AI node
+function isPositionInAINode(position) {
+    const segment = findSegmentAtPosition(position);
+    if (!segment) return false;
+    const node = appState.tree.nodes[segment.nodeId];
+    return node && node.type === 'ai';
+}
+
+// Check if a delete operation would completely empty any node
+// Returns true only if branching is appropriate (node has parent or siblings)
+function wouldDeleteEmptyNode(position, count) {
     const endPosition = position + count;
-    console.log('[editor] handleDelete:', { position, count, endPosition });
+
+    for (const segment of editorState.segments) {
+        const overlapStart = Math.max(position, segment.start);
+        const overlapEnd = Math.min(endPosition, segment.end);
+
+        if (overlapStart < overlapEnd) {
+            const node = appState.tree.nodes[segment.nodeId];
+            if (!node) continue;
+
+            const nodeText = (node.text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+            const deleteStart = overlapStart - segment.start;
+            const deleteEnd = overlapEnd - segment.start;
+
+            // Would this delete empty the node?
+            const before = nodeText.substring(0, deleteStart);
+            const after = nodeText.substring(deleteEnd);
+            if ((before + after).length === 0) {
+                // Only branch if the node has a parent (not root) or has siblings
+                // Branching a lone root node creates an unusable empty root
+                if (node.parent_id) {
+                    return true; // Has parent, safe to branch
+                }
+                // Check if node has siblings (other roots or children of same parent)
+                const siblings = Object.values(appState.tree.nodes).filter(n =>
+                    n.id !== node.id && n.parent_id === node.parent_id
+                );
+                if (siblings.length > 0) {
+                    return true; // Has siblings, safe to branch
+                }
+                // Lone root with no parent - don't branch, just delete normally
+                return false;
+            }
+        }
+    }
+    return false;
+}
+
+// Handle text deletion (destructive - for single char backspace without selection)
+function handleDestructiveDelete(position, count) {
+    const endPosition = position + count;
+    console.log('[editor] handleDestructiveDelete:', { position, count, endPosition });
 
     // Compute all deletions upfront from current segments (avoids stale iteration)
     const deletions = [];
@@ -810,13 +1136,10 @@ function handleEditorKeydown(e) {
         return;
     }
 
-    // Ctrl+Enter to generate
+    // Ctrl+Enter to generate (splits at cursor if not at end)
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        const selectedId = appState.tree.selected_node_id;
-        if (selectedId) {
-            generateCompletions(selectedId);
-        }
+        generateFromCursor();
         return;
     }
 

@@ -527,14 +527,9 @@ function initPanelDrag() {
 // ============================================
 
 function initBottomBar() {
-    // Generate button
+    // Generate button - splits at cursor if not at end, then generates
     document.getElementById('generate-btn').addEventListener('click', () => {
-        const selectedId = appState.tree.selected_node_id;
-        if (selectedId) {
-            generateCompletions(selectedId);
-        } else {
-            showError('No node selected');
-        }
+        generateFromCursor();
     });
 
     // Cancel button
@@ -542,21 +537,9 @@ function initBottomBar() {
         cancelAllGenerations();
     });
 
-    // Continue button - generate single child and select it
-    document.getElementById('continue-btn').addEventListener('click', async () => {
-        const selectedId = appState.tree.selected_node_id;
-        if (selectedId) {
-            await generateCompletions(selectedId, 1);
-            // Select the first (only) child that was just created
-            const children = getChildren(appState.tree.nodes, selectedId);
-            if (children.length > 0) {
-                // Select the newest child (last in array by creation)
-                const newestChild = children[children.length - 1];
-                selectNode(newestChild.id);
-            }
-        } else {
-            showError('No node selected');
-        }
+    // Continue button - splits at cursor if not at end, generates single child and selects it
+    document.getElementById('continue-btn').addEventListener('click', () => {
+        continueFromCursor();
     });
 
     // Reroll button
@@ -585,6 +568,11 @@ function initBottomBar() {
         autoformatTree(appState.tree.nodes);
         saveTree();
         renderTree();
+    });
+
+    // Split button - split node at cursor position
+    document.getElementById('split-btn').addEventListener('click', () => {
+        splitAtCursor();
     });
 }
 

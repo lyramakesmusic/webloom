@@ -600,6 +600,27 @@ body {
     opacity: 1;
 }
 
+/* Prevent text selection while dragging canvas */
+body.canvas-dragging {
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grabbing !important;
+}
+
+body.canvas-dragging * {
+    cursor: grabbing !important;
+}
+
+/* Hidden branch indicator (inside node) */
+.hidden-indicator:hover rect {
+    fill: #555;
+    stroke: #888;
+}
+
+.hidden-indicator:hover text {
+    fill: #ddd;
+}
+
 /* Plus button - round, transparent until hover */
 .plus-group {
     cursor: pointer;
