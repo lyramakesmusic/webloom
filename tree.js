@@ -339,21 +339,32 @@ function calculateVisibleNodes(focusedNodeId, nodes, pathHint = null) {
 
     addDescendants(focusedNodeId);
 
-    // Walk up ancestors (follow first parent for now)
+    // Walk up ancestors (use pathHint to follow correct parent at DAG merges)
     let current = focused;
     let currentParentIds = getParentIds(current);
     while (currentParentIds.length > 0) {
-        const parentId = currentParentIds[0]; // Follow first parent
+        // Use pathHint to find which parent to follow, fallback to first
+        let parentId = currentParentIds[0];
+        if (pathHint && pathHint.length > 0) {
+            const pathParent = currentParentIds.find(pid => pathHint.includes(pid));
+            if (pathParent) parentId = pathParent;
+        }
         const parent = nodes[parentId];
         if (!parent) break;
         visible.add(parent.id);
 
-        // Parent's siblings
+        // Parent's siblings (only from the active grandparent)
         const parentParentIds = getParentIds(parent);
         if (parentParentIds.length > 0) {
+            // Find active grandparent from path
+            let activeGrandparentId = parentParentIds[0];
+            if (pathHint && pathHint.length > 0) {
+                const pathGrandparent = parentParentIds.find(pid => pathHint.includes(pid));
+                if (pathGrandparent) activeGrandparentId = pathGrandparent;
+            }
             Object.values(nodes).forEach(node => {
                 const nodeParentIds = getParentIds(node);
-                if (parentParentIds.some(pid => nodeParentIds.includes(pid))) {
+                if (nodeParentIds.includes(activeGrandparentId)) {
                     visible.add(node.id);
                 }
             });

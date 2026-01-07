@@ -595,17 +595,11 @@ function initBottomBar() {
         cancelAllGenerations();
     });
 
-    // Tree panel generate button (mobile)
-    document.getElementById('tree-generate-btn')?.addEventListener('click', () => {
-        const selectedId = appState.tree.selected_node_id;
-        if (selectedId) {
-            generateCompletions(selectedId);
-        }
-    });
-
-    // Tree panel cancel button (mobile)
-    document.getElementById('tree-cancel-btn')?.addEventListener('click', () => {
-        cancelAllGenerations();
+    // Tree panel autoformat button (mobile)
+    document.getElementById('tree-autoformat-btn')?.addEventListener('click', () => {
+        autoformatTree(appState.tree.nodes);
+        renderTree();
+        saveTree();
     });
 
     // Tree panel reset view button (mobile)
@@ -637,13 +631,6 @@ function initBottomBar() {
                 }, 1000);
             });
         }
-    });
-
-    // Autoformat button
-    document.getElementById('autoformat-btn').addEventListener('click', () => {
-        autoformatTree(appState.tree.nodes);
-        saveTree();
-        renderTree();
     });
 
     // Split button - split node at cursor position
@@ -815,17 +802,22 @@ function initMobile() {
         const adjustForKeyboard = () => {
             if (!isMobile()) {
                 editorBottomBar.classList.remove('keyboard-open');
-                editorBottomBar.style.setProperty('--keyboard-height', '0px');
+                editorBottomBar.style.removeProperty('bottom');
                 return;
             }
-            // visualViewport.height shrinks when keyboard opens
-            const keyboardHeight = window.innerHeight - window.visualViewport.height;
+            // Calculate where bottom of visual viewport is relative to layout viewport
+            const vv = window.visualViewport;
+            const keyboardHeight = window.innerHeight - vv.height;
+
             if (keyboardHeight > 100) { // Keyboard is likely open
+                // Position bar at bottom of visual viewport (right above keyboard)
+                // Account for both keyboard height AND any viewport offset from scrolling
+                const bottomPosition = window.innerHeight - vv.height - vv.offsetTop;
                 editorBottomBar.classList.add('keyboard-open');
-                editorBottomBar.style.setProperty('--keyboard-height', keyboardHeight + 'px');
+                editorBottomBar.style.bottom = Math.max(0, bottomPosition) + 'px';
             } else {
                 editorBottomBar.classList.remove('keyboard-open');
-                editorBottomBar.style.setProperty('--keyboard-height', '0px');
+                editorBottomBar.style.removeProperty('bottom');
             }
         };
         window.visualViewport.addEventListener('resize', adjustForKeyboard);

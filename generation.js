@@ -4,6 +4,127 @@ let activeGenerations = new Map(); // nodeId -> AbortController
 let lastRenderTime = 0;
 const RENDER_THROTTLE_MS = 80;
 
+// Mobile completions preview
+const isMobileView = () => window.innerWidth <= 768;
+
+// One-time setup for dismiss handlers
+(function setupMobileCompletionsDismiss() {
+    document.addEventListener('DOMContentLoaded', () => {
+        const container = document.getElementById('mobile-completions');
+        if (container) {
+            container.onclick = (e) => {
+                if (e.target === container) clearMobileCompletions();
+            };
+        }
+        const editor = document.getElementById('editor');
+        if (editor) {
+            editor.addEventListener('click', () => clearMobileCompletions());
+        }
+    });
+})();
+
+function initMobileCompletions() {
+    const container = document.getElementById('mobile-completions');
+    if (!container) return;
+    container.innerHTML = '';
+    container.classList.remove('has-completions');
+}
+
+function addMobileCompletion(nodeId) {
+    if (!isMobileView()) return;
+    const container = document.getElementById('mobile-completions');
+    if (!container) return;
+
+    const item = document.createElement('div');
+    item.className = 'mobile-completion-item loading';
+    item.dataset.nodeId = nodeId;
+    item.textContent = 'Generating...';
+
+    // Tap vs drag detection
+    let touchStart = null;
+    item.addEventListener('touchstart', (e) => {
+        touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, time: Date.now() };
+    }, { passive: true });
+    item.addEventListener('touchend', (e) => {
+        if (!touchStart) return;
+        const touch = e.changedTouches[0];
+        const dx = Math.abs(touch.clientX - touchStart.x);
+        const dy = Math.abs(touch.clientY - touchStart.y);
+        const dt = Date.now() - touchStart.time;
+        // Tap: small movement, short duration
+        if (dx < 10 && dy < 10 && dt < 300) {
+            selectNode(nodeId);
+            clearMobileCompletions();
+        }
+        touchStart = null;
+    });
+
+    container.appendChild(item);
+    container.classList.add('has-completions');
+}
+
+function updateMobileCompletion(nodeId, text) {
+    if (!isMobileView()) return;
+    const container = document.getElementById('mobile-completions');
+    if (!container) return;
+
+    const item = container.querySelector(`[data-node-id="${nodeId}"]`);
+    if (item) {
+        item.textContent = text || 'Generating...';
+    }
+}
+
+function finishMobileCompletion(nodeId) {
+    if (!isMobileView()) return;
+    const container = document.getElementById('mobile-completions');
+    if (!container) return;
+
+    const item = container.querySelector(`[data-node-id="${nodeId}"]`);
+    if (item) {
+        item.classList.remove('loading');
+    }
+
+    // Check if container needs scrolling (content >= 90% of available height)
+    updateMobileCompletionsScroll();
+}
+
+function updateMobileCompletionsScroll() {
+    const container = document.getElementById('mobile-completions');
+    if (!container) return;
+
+    const vv = window.visualViewport || { height: window.innerHeight };
+    const bottomBarHeight = 80; // editor-bottom-bar + footer approx
+    const availableHeight = vv.height - bottomBarHeight;
+    const contentHeight = container.scrollHeight;
+
+    // Only enable scroll if content >= 90% of available
+    if (contentHeight >= availableHeight * 0.9) {
+        container.style.overflowY = 'auto';
+        container.style.maxHeight = `${availableHeight * 0.9}px`;
+    } else {
+        container.style.overflowY = 'visible';
+        container.style.maxHeight = 'none';
+    }
+}
+
+function removeMobileCompletion(nodeId) {
+    const container = document.getElementById('mobile-completions');
+    if (!container) return;
+    const item = container.querySelector(`[data-node-id="${nodeId}"]`);
+    if (item) item.remove();
+    // If no items left, clear container
+    if (!container.children.length) clearMobileCompletions();
+}
+
+function clearMobileCompletions() {
+    const container = document.getElementById('mobile-completions');
+    if (!container) return;
+    container.innerHTML = '';
+    container.classList.remove('has-completions');
+    container.style.overflowY = '';
+    container.style.maxHeight = '';
+}
+
 // Get current settings from UI
 function getCurrentSettings() {
     const modelInput = document.getElementById('model-input').value;
@@ -84,6 +205,10 @@ async function generateCompletions(parentNodeId, overrideCount = null) {
     renderTree();
     showGeneratingUI(true);
 
+    // Mobile: show completion previews
+    initMobileCompletions();
+    placeholderIds.forEach(id => addMobileCompletion(id));
+
     // Generate each sibling
     const promises = placeholderIds.map((nodeId, index) => {
         return new Promise(async (resolve) => {
@@ -100,6 +225,7 @@ async function generateCompletions(parentNodeId, overrideCount = null) {
                     // onChunk - throttled light update (text only, no DOM rebuild)
                     (chunk, fullText) => {
                         node.text = fullText;
+                        updateMobileCompletion(nodeId, fullText);
                         const now = Date.now();
                         if (now - lastRenderTime >= RENDER_THROTTLE_MS) {
                             lastRenderTime = now;
@@ -111,6 +237,7 @@ async function generateCompletions(parentNodeId, overrideCount = null) {
                         node.text = fullText;
                         node.loading = false;
                         activeGenerations.delete(nodeId);
+                        finishMobileCompletion(nodeId);
                         if (navigator.vibrate) navigator.vibrate(10);
                         renderTree();
                         resolve({ nodeId, success: true });
@@ -120,6 +247,7 @@ async function generateCompletions(parentNodeId, overrideCount = null) {
                         node.loading = false;
                         node.error = error.message;
                         activeGenerations.delete(nodeId);
+                        removeMobileCompletion(nodeId);
                         renderTree();
                         resolve({ nodeId, success: false, error: error.message });
                     },
@@ -129,6 +257,7 @@ async function generateCompletions(parentNodeId, overrideCount = null) {
                 node.loading = false;
                 node.error = error.message;
                 activeGenerations.delete(nodeId);
+                removeMobileCompletion(nodeId);
                 renderTree();
                 resolve({ nodeId, success: false, error: error.message });
             }
@@ -223,6 +352,7 @@ function cancelAllGenerations() {
     if (root) repositionSiblings(root.id);
 
     showGeneratingUI(false);
+    clearMobileCompletions();
     saveTree();
     renderTree();
 }
@@ -264,18 +394,12 @@ async function rerollSiblings() {
 function showGeneratingUI(isGenerating) {
     const generateBtn = document.getElementById('generate-btn');
     const cancelBtn = document.getElementById('cancel-btn');
-    const treeGenerateBtn = document.getElementById('tree-generate-btn');
-    const treeCancelBtn = document.getElementById('tree-cancel-btn');
 
     if (isGenerating) {
         generateBtn.style.display = 'none';
         cancelBtn.style.display = 'flex';
-        if (treeGenerateBtn) treeGenerateBtn.style.display = 'none';
-        if (treeCancelBtn) treeCancelBtn.style.display = 'flex';
     } else {
         generateBtn.style.display = 'flex';
         cancelBtn.style.display = 'none';
-        if (treeGenerateBtn) treeGenerateBtn.style.display = 'flex';
-        if (treeCancelBtn) treeCancelBtn.style.display = 'none';
     }
 }

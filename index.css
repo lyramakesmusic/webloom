@@ -778,9 +778,19 @@ body.canvas-dragging * {
     flex: 1;
 }
 
-/* Tree Bottom Bar (mobile only) */
+/* Tree Bottom Bar */
 .tree-bottom-bar {
-    display: none; /* Hidden on desktop */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--bg-dark);
+}
+
+/* Mobile Completions Preview (hidden on desktop) */
+.mobile-completions {
+    display: none;
 }
 
 /* ============================================
@@ -1225,6 +1235,7 @@ body.canvas-dragging * {
     .editor {
         max-width: 100%;
         padding: 16px;
+        padding-bottom: 20px; /* Extra space above bottom bar */
     }
 
     /* Hide panel headers on mobile (redundant with tabs) */
@@ -1298,6 +1309,54 @@ body.canvas-dragging * {
     /* Editor bottom bar when keyboard is open - move above keyboard */
     .editor-bottom-bar.keyboard-open {
         bottom: var(--keyboard-height, 0);
+    }
+
+    /* Mobile completions preview - toast-style above bottom bar */
+    .mobile-completions {
+        display: none; /* Only show when has children */
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 80px; /* Above bottom bar */
+        padding: 8px;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 99;
+        pointer-events: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .mobile-completions.has-completions {
+        display: flex;
+    }
+
+    .mobile-completion-item {
+        background: rgba(31, 31, 31, 0.9);
+        border: 1px solid var(--border-color);
+        border-radius: 0;
+        padding: 8px 10px;
+        font-size: 12px;
+        line-height: 1.4;
+        font-family: 'Inter', sans-serif;
+        color: var(--text-primary);
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 200px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        cursor: pointer;
+        pointer-events: auto;
+        position: relative;
+    }
+
+    .mobile-completion-item:active {
+        background: var(--bg-dark);
+        border-color: var(--accent-blue);
+    }
+
+    .mobile-completion-item.loading {
+        color: var(--text-muted);
+        font-style: italic;
     }
 
     /* Sidebar overlay */

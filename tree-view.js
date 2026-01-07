@@ -29,8 +29,8 @@ function initTreeCanvas() {
     svg.addEventListener('touchmove', handleCanvasTouchMove, { passive: false });
     svg.addEventListener('touchend', handleCanvasTouchEnd);
 
-    // Reset view button
-    document.getElementById('reset-view-btn')?.addEventListener('click', resetView);
+    // Reset view button (in tree bottom bar)
+    document.getElementById('tree-reset-view-btn')?.addEventListener('click', resetView);
 }
 
 // Reset view to selected node or root
@@ -40,7 +40,7 @@ function resetView() {
         panToNode(selectedId);
     } else {
         // Find root and pan to it
-        const root = Object.values(appState.tree.nodes).find(n => !n.parent_id);
+        const root = Object.values(appState.tree.nodes).find(n => isRoot(n));
         if (root) {
             panToNode(root.id);
         } else {
@@ -106,45 +106,119 @@ function handleCanvasWheel(e) {
 }
 
 // Touch handlers for mobile
-let touchState = { startDistance: 0, startZoom: 1 };
+let touchState = {
+    startDistance: 0,
+    startZoom: 1,
+    isPinching: false,
+    startPan: null,
+    startWorldCenter: null,  // World point under pinch center
+    lastCenter: null         // Track last pinch center for panning while zooming
+};
 
 function handleCanvasTouchStart(e) {
-    if (e.touches.length === 1) {
-        // Single touch = pan
+    // Prevent all default touch behavior on canvas (browser scroll/zoom)
+    e.preventDefault();
+
+    const svg = document.getElementById('tree-canvas');
+    const rect = svg.getBoundingClientRect();
+
+    if (e.touches.length === 1 && !touchState.isPinching) {
+        // Single touch = pan (only if not already pinching)
         treeCanvas.isDragging = true;
         treeCanvas.dragStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         treeCanvas.panStart = { ...treeCanvas.pan };
-    } else if (e.touches.length === 2) {
-        // Pinch to zoom
-        e.preventDefault();
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
+    } else if (e.touches.length >= 2) {
+        // Pinch to zoom - cancel any pan, enter pinch mode
+        treeCanvas.isDragging = false;
+        touchState.isPinching = true;
+
+        // Use raw client coords - simpler and more reliable on mobile
+        const t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        const t1 = { x: e.touches[1].clientX, y: e.touches[1].clientY };
+
+        const dx = t0.x - t1.x;
+        const dy = t0.y - t1.y;
         touchState.startDistance = Math.sqrt(dx * dx + dy * dy);
         touchState.startZoom = treeCanvas.zoom;
+        touchState.startPan = { ...treeCanvas.pan };
+
+        // Center between fingers (client coords)
+        const screenCenter = { x: (t0.x + t1.x) / 2, y: (t0.y + t1.y) / 2 };
+        touchState.lastCenter = screenCenter;
+
+        // Store rect offset at start for consistent calculation
+        touchState.rectOffset = { x: rect.left, y: rect.top };
+
+        // Calculate world point under pinch center - this stays fixed during zoom
+        // Convert client coords to SVG-relative, then to world
+        const svgX = screenCenter.x - rect.left;
+        const svgY = screenCenter.y - rect.top;
+        touchState.startWorldCenter = {
+            x: (svgX - treeCanvas.pan.x) / treeCanvas.zoom,
+            y: (svgY - treeCanvas.pan.y) / treeCanvas.zoom
+        };
     }
 }
 
 function handleCanvasTouchMove(e) {
-    if (e.touches.length === 1 && treeCanvas.isDragging) {
+    // Always prevent default to stop browser scroll/zoom
+    e.preventDefault();
+
+    if (e.touches.length >= 2 && touchState.isPinching && touchState.rectOffset) {
+        // Use raw client coords
+        const t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        const t1 = { x: e.touches[1].clientX, y: e.touches[1].clientY };
+
+        // Current center (client coords) and distance
+        const clientCenter = { x: (t0.x + t1.x) / 2, y: (t0.y + t1.y) / 2 };
+        const dx = t0.x - t1.x;
+        const dy = t0.y - t1.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Convert to SVG-relative using stored offset
+        const svgCenter = {
+            x: clientCenter.x - touchState.rectOffset.x,
+            y: clientCenter.y - touchState.rectOffset.y
+        };
+
+        // New zoom from pinch ratio
+        const scale = touchState.startDistance > 0 ? distance / touchState.startDistance : 1;
+        const newZoom = Math.max(0.1, Math.min(3, touchState.startZoom * scale));
+
+        // Pan so that the world point stays under the current pinch center
+        // svgPoint = worldPoint * zoom + pan
+        // pan = svgPoint - worldPoint * zoom
+        treeCanvas.pan.x = svgCenter.x - touchState.startWorldCenter.x * newZoom;
+        treeCanvas.pan.y = svgCenter.y - touchState.startWorldCenter.y * newZoom;
+        treeCanvas.zoom = newZoom;
+
+        touchState.lastCenter = clientCenter;
+        updateTreeViewport();
+    } else if (e.touches.length === 1 && treeCanvas.isDragging && !touchState.isPinching) {
+        // Single finger pan
         const dx = e.touches[0].clientX - treeCanvas.dragStart.x;
         const dy = e.touches[0].clientY - treeCanvas.dragStart.y;
         treeCanvas.pan.x = treeCanvas.panStart.x + dx;
         treeCanvas.pan.y = treeCanvas.panStart.y + dy;
         updateTreeViewport();
-    } else if (e.touches.length === 2) {
-        e.preventDefault();
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const scale = distance / touchState.startDistance;
-        treeCanvas.zoom = Math.max(0.1, Math.min(3, touchState.startZoom * scale));
-        updateTreeViewport();
     }
 }
 
 function handleCanvasTouchEnd(e) {
-    treeCanvas.isDragging = false;
-    saveUIState();
+    // Only exit pinch mode when all fingers lifted
+    if (e.touches.length === 0) {
+        treeCanvas.isDragging = false;
+        touchState.isPinching = false;
+        touchState.startDistance = 0;
+        touchState.startCenter = null;
+        touchState.startPan = null;
+        touchState.rectOffset = null;
+        touchState.startWorldCenter = null;
+        saveUIState();
+    } else if (e.touches.length === 1 && touchState.isPinching) {
+        // Went from 2 fingers to 1 - stay in pinch mode to prevent accidental pan
+        // User needs to lift all fingers to reset
+    }
 }
 
 function updateTreeViewport() {
@@ -212,32 +286,47 @@ function renderTree() {
     const nodes = appState.tree.nodes;
     const selectedId = appState.tree.selected_node_id;
 
-    // Calculate visible nodes
-    const visibleIds = calculateVisibleNodes(selectedId, nodes);
+    // Calculate visible nodes (pass selected_path for DAG-aware visibility)
+    const visibleIds = calculateVisibleNodes(selectedId, nodes, appState.tree.selected_path);
 
-    // Calculate focused path for edge styling
+    // Calculate focused path for edge styling (use selected_path for DAG)
     const focusedPath = new Set();
-    if (selectedId) {
+    const selectedPath = appState.tree.selected_path || [];
+    if (selectedPath.length > 0) {
+        // Use stored path for accurate DAG traversal
+        selectedPath.forEach((nodeId, i) => {
+            focusedPath.add(nodeId);
+            if (i > 0) {
+                // Add edge from previous node to this one
+                focusedPath.add(`${selectedPath[i-1]}->${nodeId}`);
+            }
+        });
+    } else if (selectedId) {
+        // Fallback: walk up using first parent
         let current = nodes[selectedId];
         while (current) {
             focusedPath.add(current.id);
-            if (current.parent_id) {
-                focusedPath.add(`${current.parent_id}->${current.id}`);
-            }
-            current = nodes[current.parent_id];
+            const currentParentIds = getParentIds(current);
+            currentParentIds.forEach(pid => {
+                focusedPath.add(`${pid}->${current.id}`);
+            });
+            current = currentParentIds.length > 0 ? nodes[currentParentIds[0]] : null;
         }
     }
 
-    // Render edges first (behind nodes)
+    // Render edges first (behind nodes) - render ALL parent edges for DAG
     Object.values(nodes).forEach(node => {
-        if (node.parent_id && visibleIds.has(node.id)) {
-            const parent = nodes[node.parent_id];
-            if (parent) {
-                const edgeKey = `${parent.id}->${node.id}`;
-                const isOnPath = focusedPath.has(edgeKey);
-                const edge = renderEdge(parent, node, isOnPath);
-                edgesContainer.appendChild(edge);
-            }
+        const nodeParentIds = getParentIds(node);
+        if (nodeParentIds.length > 0 && visibleIds.has(node.id)) {
+            nodeParentIds.forEach(parentId => {
+                const parent = nodes[parentId];
+                if (parent) {
+                    const edgeKey = `${parent.id}->${node.id}`;
+                    const isOnPath = focusedPath.has(edgeKey);
+                    const edge = renderEdge(parent, node, isOnPath);
+                    edgesContainer.appendChild(edge);
+                }
+            });
         }
     });
 
@@ -350,6 +439,45 @@ function renderNode(node, isSelected, isOnPath, hiddenChildren = [], nodes = {})
         });
 
         g.appendChild(indicatorGroup);
+    }
+
+    // DAG merge indicator (bottom-right) - shows when node has multiple parents
+    const parentIds = getParentIds(node);
+    if (parentIds.length > 1) {
+        const dagGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        dagGroup.setAttribute('class', 'dag-indicator');
+        dagGroup.setAttribute('transform', `translate(${dims.width - 12}, ${dims.height - 8})`);
+
+        // Small pill background
+        const pillW = 20, pillH = 14;
+        const pill = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        pill.setAttribute('x', -pillW / 2);
+        pill.setAttribute('y', -pillH / 2);
+        pill.setAttribute('width', pillW);
+        pill.setAttribute('height', pillH);
+        pill.setAttribute('rx', 3);
+        pill.setAttribute('fill', '#2a4a6a');
+        pill.setAttribute('stroke', '#4a7a9a');
+        pill.setAttribute('stroke-width', '1');
+        dagGroup.appendChild(pill);
+
+        // Parent count text
+        const dagText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        dagText.setAttribute('x', 0);
+        dagText.setAttribute('y', 4);
+        dagText.setAttribute('text-anchor', 'middle');
+        dagText.setAttribute('fill', '#8ac');
+        dagText.setAttribute('font-size', '9');
+        dagText.setAttribute('font-weight', 'bold');
+        dagText.textContent = `${parentIds.length}→`;
+        dagGroup.appendChild(dagText);
+
+        // Tooltip
+        const dagTitle = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        dagTitle.textContent = `Merge node: ${parentIds.length} parents`;
+        dagGroup.appendChild(dagTitle);
+
+        g.appendChild(dagGroup);
     }
 
     // Text content
@@ -475,6 +603,13 @@ function setupNodeEventHandlers(g, node, rect, plusGroup, deleteBtn, hoverButton
     let dragStartX = 0, dragStartY = 0;
     let nodeStartX = 0, nodeStartY = 0;
 
+    // Touch drag state
+    let touchHoldTimer = null;
+    let isTouchDragging = false;
+    let touchStartPos = null;
+    const HOLD_TIME = 500; // ms
+    const MOVE_THRESHOLD = 10; // px - cancel hold if moved more than this
+
     // Show/hide hover buttons
     g.addEventListener('mouseenter', () => {
         hoverButtons.setAttribute('opacity', '1');
@@ -484,7 +619,7 @@ function setupNodeEventHandlers(g, node, rect, plusGroup, deleteBtn, hoverButton
         hoverButtons.setAttribute('opacity', '0');
     });
 
-    // Node dragging
+    // Node dragging (mouse)
     rect.addEventListener('mousedown', (e) => {
         e.stopPropagation();
         if (e.button === 0) {
@@ -556,6 +691,115 @@ function setupNodeEventHandlers(g, node, rect, plusGroup, deleteBtn, hoverButton
         }
     });
 
+    // Touch: press-and-hold to drag
+    rect.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return; // Let multi-touch propagate for pinch zoom
+        e.stopPropagation();
+
+        const touch = e.touches[0];
+        touchStartPos = { x: touch.clientX, y: touch.clientY };
+
+        // Start hold timer
+        touchHoldTimer = setTimeout(() => {
+            // Hold complete - enter drag mode
+            isTouchDragging = true;
+            g.classList.add('drag-ready');
+            if (navigator.vibrate) navigator.vibrate(10);
+
+            // Initialize drag positions
+            const svg = document.getElementById('tree-canvas');
+            const pt = svg.createSVGPoint();
+            pt.x = touch.clientX;
+            pt.y = touch.clientY;
+            const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+
+            dragStartX = svgP.x;
+            dragStartY = svgP.y;
+            nodeStartX = node.position.x;
+            nodeStartY = node.position.y;
+        }, HOLD_TIME);
+    }, { passive: false });
+
+    rect.addEventListener('touchmove', (e) => {
+        const touch = e.touches[0];
+
+        if (!isTouchDragging && touchStartPos) {
+            // Check if moved too much - cancel hold
+            const dx = Math.abs(touch.clientX - touchStartPos.x);
+            const dy = Math.abs(touch.clientY - touchStartPos.y);
+            if (dx > MOVE_THRESHOLD || dy > MOVE_THRESHOLD) {
+                clearTimeout(touchHoldTimer);
+                touchHoldTimer = null;
+                touchStartPos = null;
+            }
+            return;
+        }
+
+        if (isTouchDragging) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const svg = document.getElementById('tree-canvas');
+            const pt = svg.createSVGPoint();
+            pt.x = touch.clientX;
+            pt.y = touch.clientY;
+            const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+
+            const dx = (svgP.x - dragStartX) / treeCanvas.zoom;
+            const dy = (svgP.y - dragStartY) / treeCanvas.zoom;
+
+            // Move this node
+            node.position.x = nodeStartX + dx;
+            node.position.y = nodeStartY + dy;
+            node.manually_positioned = true;
+
+            // Move all descendants
+            const descendants = getDescendants(appState.tree.nodes, node.id);
+            descendants.forEach(desc => {
+                if (!desc._dragOffset) {
+                    desc._dragOffset = {
+                        x: desc.position.x - nodeStartX,
+                        y: desc.position.y - nodeStartY
+                    };
+                }
+                desc.position.x = node.position.x + desc._dragOffset.x;
+                desc.position.y = node.position.y + desc._dragOffset.y;
+            });
+
+            renderTree();
+        }
+    }, { passive: false });
+
+    rect.addEventListener('touchend', (e) => {
+        clearTimeout(touchHoldTimer);
+        touchHoldTimer = null;
+
+        if (isTouchDragging) {
+            // End drag
+            isTouchDragging = false;
+            g.classList.remove('drag-ready');
+
+            // Clean up drag offsets
+            const descendants = getDescendants(appState.tree.nodes, node.id);
+            descendants.forEach(desc => delete desc._dragOffset);
+
+            saveTree();
+        } else if (touchStartPos) {
+            // Tap - select node
+            selectNode(node.id);
+        }
+
+        touchStartPos = null;
+    });
+
+    rect.addEventListener('touchcancel', () => {
+        clearTimeout(touchHoldTimer);
+        touchHoldTimer = null;
+        isTouchDragging = false;
+        touchStartPos = null;
+        g.classList.remove('drag-ready');
+    });
+
     // Plus button - generate children
     plusGroup.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -585,7 +829,18 @@ function renderEdge(parentNode, childNode, isOnPath) {
 function selectNode(nodeId) {
     // Validate node exists before selecting
     if (!appState.tree.nodes[nodeId]) return;
+
+    // DAG: compute path using old path as hint (preserves which parent branch you were on)
+    const oldPath = appState.tree.selected_path || [];
+    const newPath = getPathToNode(appState.tree.nodes, nodeId, oldPath);
+    appState.tree.selected_path = newPath.map(n => n.id);
     appState.tree.selected_node_id = nodeId;
+
+    // Clear cursor focus when user explicitly selects a node
+    if (typeof editorState !== 'undefined') {
+        editorState.cursorNodeId = null;
+        editorState.inlineEditNodeId = null;
+    }
     renderTree();
     updateEditor();
     saveUIState();
@@ -607,7 +862,14 @@ function deleteNodeWithConfirm(node) {
         const descendants = getDescendants(appState.tree.nodes, node.id);
         const descendantIds = new Set(descendants.map(d => d.id));
         if (selectedId === node.id || descendantIds.has(selectedId)) {
-            appState.tree.selected_node_id = node.parent_id;
+            const nodeParentIds = getParentIds(node);
+            // Use selectNode to properly update path
+            if (nodeParentIds.length > 0) {
+                selectNode(nodeParentIds[0]);
+            } else {
+                appState.tree.selected_node_id = null;
+                appState.tree.selected_path = [];
+            }
         }
     }
 
