@@ -1235,7 +1235,7 @@ body.canvas-dragging * {
     .editor {
         max-width: 100%;
         padding: 16px;
-        padding-bottom: 20px; /* Extra space above bottom bar */
+        padding-bottom: 80px; /* Space for fixed bottom bar + footer */
     }
 
     /* Hide panel headers on mobile (redundant with tabs) */
@@ -1306,23 +1306,20 @@ body.canvas-dragging * {
         display: flex;
     }
 
-    /* Editor bottom bar when keyboard is open - move above keyboard */
-    .editor-bottom-bar.keyboard-open {
-        bottom: var(--keyboard-height, 0);
-    }
-
-    /* Mobile completions preview - toast-style above bottom bar */
+    /* Mobile completions preview - overlay + toast container */
     .mobile-completions {
-        display: none; /* Only show when has children */
+        display: none;
         position: fixed;
         left: 0;
         right: 0;
-        bottom: 80px; /* Above bottom bar */
-        padding: 8px;
-        flex-direction: column;
-        gap: 8px;
+        bottom: 100px; /* Above footer + editor bottom bar */
         z-index: 99;
         pointer-events: auto;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px;
+        max-height: 60vh;
+        overflow-y: auto;
         -webkit-overflow-scrolling: touch;
     }
 
@@ -1330,13 +1327,25 @@ body.canvas-dragging * {
         display: flex;
     }
 
+    /* Fullscreen dark overlay behind toasts */
+    .mobile-completions::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: -1;
+    }
+
     .mobile-completion-item {
-        background: rgba(31, 31, 31, 0.9);
-        border: 1px solid var(--border-color);
+        background: var(--bg-dark);
+        border: 2px solid var(--border-color);
         border-radius: 0;
-        padding: 8px 10px;
-        font-size: 12px;
-        line-height: 1.4;
+        padding: 12px;
+        font-size: 14px;
+        line-height: 1.5;
         font-family: 'Inter', sans-serif;
         color: var(--text-primary);
         white-space: pre-wrap;

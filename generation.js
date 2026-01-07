@@ -32,10 +32,16 @@ function addMobileCompletion(nodeId) {
     const container = document.getElementById('mobile-completions');
     if (!container) return;
 
+    const node = appState.tree.nodes[nodeId];
     const item = document.createElement('div');
     item.className = 'mobile-completion-item loading';
     item.dataset.nodeId = nodeId;
     item.textContent = 'Generating...';
+
+    // Set border color from model
+    if (node && node.model) {
+        item.style.borderColor = getModelColor(node.model);
+    }
 
     // Tap vs drag detection
     let touchStart = null;

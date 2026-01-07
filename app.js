@@ -634,6 +634,14 @@ function initBottomBar() {
     document.getElementById('split-btn').addEventListener('click', () => {
         splitAtCursor();
     });
+
+    // Undo/Redo buttons
+    document.getElementById('undo-btn').addEventListener('click', () => {
+        undo();
+    });
+    document.getElementById('redo-btn').addEventListener('click', () => {
+        redo();
+    });
 }
 
 // Update stats display
@@ -791,39 +799,6 @@ function initMobile() {
     // Handle resize
     window.addEventListener('resize', applyMobileState);
 
-    // Handle virtual keyboard (move bottom bar above keyboard)
-    const editorBottomBar = document.querySelector('.editor-bottom-bar');
-    if (window.visualViewport && editorBottomBar) {
-        let lastKeyboardHeight = 0;
-        const adjustForKeyboard = () => {
-            try {
-                if (!isMobile()) {
-                    editorBottomBar.classList.remove('keyboard-open');
-                    editorBottomBar.style.removeProperty('bottom');
-                    return;
-                }
-                const vv = window.visualViewport;
-                if (!vv || typeof vv.height !== 'number') return;
-
-                const keyboardHeight = Math.round(window.innerHeight - vv.height);
-
-                // Skip if no change (prevents excessive DOM updates)
-                if (keyboardHeight === lastKeyboardHeight) return;
-                lastKeyboardHeight = keyboardHeight;
-
-                if (keyboardHeight > 100) {
-                    editorBottomBar.classList.add('keyboard-open');
-                    editorBottomBar.style.bottom = keyboardHeight + 'px';
-                } else {
-                    editorBottomBar.classList.remove('keyboard-open');
-                    editorBottomBar.style.removeProperty('bottom');
-                }
-            } catch (e) {
-                // Ignore errors from visualViewport on some mobile browsers
-            }
-        };
-        window.visualViewport.addEventListener('resize', adjustForKeyboard);
-    }
 
     // Initial setup
     applyMobileState();
