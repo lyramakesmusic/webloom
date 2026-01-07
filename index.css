@@ -1205,7 +1205,7 @@ body.canvas-dragging * {
         top: 0;
         left: 0;
         right: 0;
-        bottom: 80px; /* Room for fixed footer (32px) + bottom bar (~48px) */
+        bottom: 90px; /* Room for fixed footer (32px) + bottom bar (~58px) */
         width: 100% !important;
         display: none;
         flex-direction: column;
@@ -1280,9 +1280,11 @@ body.canvas-dragging * {
         bottom: 32px; /* Above the footer */
         z-index: 100;
         display: none; /* Hidden by default */
+        flex-direction: row-reverse; /* Generate on right for right-thumb access */
+        justify-content: flex-start; /* Align buttons from right */
         align-items: center;
         gap: 8px;
-        padding: 8px 12px;
+        padding: 12px; /* +4px vertical from original 8px */
         background: var(--bg-dark);
         border-top: 1px solid var(--border-color);
     }
