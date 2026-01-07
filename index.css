@@ -912,6 +912,11 @@ body.canvas-dragging * {
     top: 16px;
     right: 16px;
     z-index: 1000;
+    pointer-events: none; /* Don't block clicks when no toast showing */
+}
+
+.toast-container .toast {
+    pointer-events: auto; /* Toast itself is clickable */
 }
 
 .toast {
