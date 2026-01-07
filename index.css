@@ -1205,7 +1205,7 @@ body.canvas-dragging * {
         top: 0;
         left: 0;
         right: 0;
-        bottom: 32px; /* Room for fixed footer */
+        bottom: 80px; /* Room for fixed footer (32px) + bottom bar (~48px) */
         width: 100% !important;
         display: none;
         flex-direction: column;
@@ -1271,31 +1271,31 @@ body.canvas-dragging * {
         padding-bottom: env(safe-area-inset-bottom, 0);
     }
 
-    /* Editor bottom bar always visible */
-    .editor-bottom-bar {
-        flex-shrink: 0;
-    }
-
-    /* Editor bottom bar when keyboard is open */
-    .editor-bottom-bar.keyboard-open {
+    /* Bottom bar base styles on mobile - fixed above footer */
+    .editor-bottom-bar,
+    .tree-bottom-bar {
         position: fixed;
         left: 0;
         right: 0;
-        bottom: var(--keyboard-height, 0);
+        bottom: 32px; /* Above the footer */
         z-index: 100;
+        display: none; /* Hidden by default */
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
         background: var(--bg-dark);
         border-top: 1px solid var(--border-color);
     }
 
-    /* Tree bottom bar visible on mobile */
-    .tree-bottom-bar {
+    /* Show bottom bar when its panel is active */
+    .panel.mobile-active .editor-bottom-bar,
+    .panel.mobile-active .tree-bottom-bar {
         display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        border-top: 1px solid var(--border-color);
-        background-color: var(--bg-dark);
-        flex-shrink: 0;
+    }
+
+    /* Editor bottom bar when keyboard is open - move above keyboard */
+    .editor-bottom-bar.keyboard-open {
+        bottom: var(--keyboard-height, 0);
     }
 
     /* Sidebar overlay */
