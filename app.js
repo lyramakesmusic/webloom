@@ -344,7 +344,6 @@ function initSidebar() {
     }
 
     collapseBtn.addEventListener('click', (e) => {
-        console.log('[sidebar] collapse click', e);
         if (isMobile()) {
             closeMobileSidebar();
         } else {
@@ -356,7 +355,6 @@ function initSidebar() {
     });
 
     expandBtn.addEventListener('click', (e) => {
-        console.log('[sidebar] expand click', e);
         if (isMobile()) {
             openMobileSidebar();
         } else {
@@ -370,7 +368,6 @@ function initSidebar() {
     // Click overlay to close (only if clicking directly on overlay, not bubbled)
     overlay?.addEventListener('click', (e) => {
         if (e.target === overlay) {
-            console.log('[sidebar] overlay click', e);
             closeMobileSidebar();
         }
     });
@@ -742,7 +739,6 @@ function initMobile() {
 
     // Set initial mobile state
     function applyMobileState() {
-        console.log('[mobile] applyMobileState, isMobile:', isMobile());
         if (isMobile()) {
             // Mobile: show tabs, activate current tab's panel
             const activeTab = mobileTabs.querySelector('.mobile-tab.active')?.dataset.tab || 'editor';
@@ -786,7 +782,6 @@ function initMobile() {
     // Tab click handlers
     mobileTabs?.querySelectorAll('.mobile-tab').forEach(tab => {
         tab.addEventListener('click', (e) => {
-            console.log('[mobile] tab click:', tab.dataset.tab, e);
             if (isMobile()) {
                 setMobileTab(tab.dataset.tab);
             }
@@ -799,29 +794,35 @@ function initMobile() {
     // Handle virtual keyboard (move bottom bar above keyboard)
     const editorBottomBar = document.querySelector('.editor-bottom-bar');
     if (window.visualViewport && editorBottomBar) {
+        let lastKeyboardHeight = 0;
         const adjustForKeyboard = () => {
-            if (!isMobile()) {
-                editorBottomBar.classList.remove('keyboard-open');
-                editorBottomBar.style.removeProperty('bottom');
-                return;
-            }
-            // Calculate where bottom of visual viewport is relative to layout viewport
-            const vv = window.visualViewport;
-            const keyboardHeight = window.innerHeight - vv.height;
+            try {
+                if (!isMobile()) {
+                    editorBottomBar.classList.remove('keyboard-open');
+                    editorBottomBar.style.removeProperty('bottom');
+                    return;
+                }
+                const vv = window.visualViewport;
+                if (!vv || typeof vv.height !== 'number') return;
 
-            if (keyboardHeight > 100) { // Keyboard is likely open
-                // Position bar at bottom of visual viewport (right above keyboard)
-                // Account for both keyboard height AND any viewport offset from scrolling
-                const bottomPosition = window.innerHeight - vv.height - vv.offsetTop;
-                editorBottomBar.classList.add('keyboard-open');
-                editorBottomBar.style.bottom = Math.max(0, bottomPosition) + 'px';
-            } else {
-                editorBottomBar.classList.remove('keyboard-open');
-                editorBottomBar.style.removeProperty('bottom');
+                const keyboardHeight = Math.round(window.innerHeight - vv.height);
+
+                // Skip if no change (prevents excessive DOM updates)
+                if (keyboardHeight === lastKeyboardHeight) return;
+                lastKeyboardHeight = keyboardHeight;
+
+                if (keyboardHeight > 100) {
+                    editorBottomBar.classList.add('keyboard-open');
+                    editorBottomBar.style.bottom = keyboardHeight + 'px';
+                } else {
+                    editorBottomBar.classList.remove('keyboard-open');
+                    editorBottomBar.style.removeProperty('bottom');
+                }
+            } catch (e) {
+                // Ignore errors from visualViewport on some mobile browsers
             }
         };
         window.visualViewport.addEventListener('resize', adjustForKeyboard);
-        window.visualViewport.addEventListener('scroll', adjustForKeyboard);
     }
 
     // Initial setup

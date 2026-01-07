@@ -119,6 +119,9 @@ function handleCanvasTouchStart(e) {
     // Prevent all default touch behavior on canvas (browser scroll/zoom)
     e.preventDefault();
 
+    // Safety check
+    if (!e.touches || !e.touches[0]) return;
+
     const svg = document.getElementById('tree-canvas');
     const rect = svg.getBoundingClientRect();
 
@@ -127,7 +130,7 @@ function handleCanvasTouchStart(e) {
         treeCanvas.isDragging = true;
         treeCanvas.dragStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         treeCanvas.panStart = { ...treeCanvas.pan };
-    } else if (e.touches.length >= 2) {
+    } else if (e.touches.length >= 2 && e.touches[1]) {
         // Pinch to zoom - cancel any pan, enter pinch mode
         treeCanvas.isDragging = false;
         touchState.isPinching = true;
@@ -164,7 +167,11 @@ function handleCanvasTouchMove(e) {
     // Always prevent default to stop browser scroll/zoom
     e.preventDefault();
 
+    // Safety: ensure touches exist
+    if (!e.touches || !e.touches[0]) return;
+
     if (e.touches.length >= 2 && touchState.isPinching && touchState.rectOffset) {
+        if (!e.touches[1]) return; // Safety check
         // Use raw client coords
         const t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         const t1 = { x: e.touches[1].clientX, y: e.touches[1].clientY };

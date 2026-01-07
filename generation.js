@@ -6,28 +6,25 @@ const RENDER_THROTTLE_MS = 80;
 
 // Mobile completions preview
 const isMobileView = () => window.innerWidth <= 768;
-
-// One-time setup for dismiss handlers
-(function setupMobileCompletionsDismiss() {
-    document.addEventListener('DOMContentLoaded', () => {
-        const container = document.getElementById('mobile-completions');
-        if (container) {
-            container.onclick = (e) => {
-                if (e.target === container) clearMobileCompletions();
-            };
-        }
-        const editor = document.getElementById('editor');
-        if (editor) {
-            editor.addEventListener('click', () => clearMobileCompletions());
-        }
-    });
-})();
+let mobileCompletionsDismissSetup = false;
 
 function initMobileCompletions() {
     const container = document.getElementById('mobile-completions');
     if (!container) return;
     container.innerHTML = '';
     container.classList.remove('has-completions');
+
+    // One-time setup for dismiss handlers
+    if (!mobileCompletionsDismissSetup) {
+        mobileCompletionsDismissSetup = true;
+        container.onclick = (e) => {
+            if (e.target === container) clearMobileCompletions();
+        };
+        const editor = document.getElementById('editor');
+        if (editor) {
+            editor.addEventListener('click', () => clearMobileCompletions());
+        }
+    }
 }
 
 function addMobileCompletion(nodeId) {
