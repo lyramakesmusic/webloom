@@ -735,9 +735,8 @@ function initMobile() {
             // Mobile: show tabs, activate current tab's panel
             const activeTab = mobileTabs.querySelector('.mobile-tab.active')?.dataset.tab || 'editor';
             setMobileTab(activeTab);
-            // Close sidebar overlay
-            sidebar.classList.remove('mobile-open');
-            overlay.classList.remove('show');
+            // Don't close sidebar on resize (keyboard open/close triggers resize)
+            // Sidebar is off-screen by default anyway via CSS transform
         } else {
             // Desktop: show both panels side by side
             editorPanel.classList.remove('mobile-active');
@@ -784,6 +783,29 @@ function initMobile() {
 
     // Handle resize
     window.addEventListener('resize', applyMobileState);
+
+    // Handle virtual keyboard (move bottom bar above keyboard)
+    const editorBottomBar = document.querySelector('.editor-bottom-bar');
+    if (window.visualViewport && editorBottomBar) {
+        const adjustForKeyboard = () => {
+            if (!isMobile()) {
+                editorBottomBar.classList.remove('keyboard-open');
+                editorBottomBar.style.setProperty('--keyboard-height', '0px');
+                return;
+            }
+            // visualViewport.height shrinks when keyboard opens
+            const keyboardHeight = window.innerHeight - window.visualViewport.height;
+            if (keyboardHeight > 100) { // Keyboard is likely open
+                editorBottomBar.classList.add('keyboard-open');
+                editorBottomBar.style.setProperty('--keyboard-height', keyboardHeight + 'px');
+            } else {
+                editorBottomBar.classList.remove('keyboard-open');
+                editorBottomBar.style.setProperty('--keyboard-height', '0px');
+            }
+        };
+        window.visualViewport.addEventListener('resize', adjustForKeyboard);
+        window.visualViewport.addEventListener('scroll', adjustForKeyboard);
+    }
 
     // Initial setup
     applyMobileState();

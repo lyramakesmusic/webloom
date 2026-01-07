@@ -1257,6 +1257,17 @@ body.canvas-dragging * {
         flex-shrink: 0;
     }
 
+    /* Editor bottom bar when keyboard is open */
+    .editor-bottom-bar.keyboard-open {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: var(--keyboard-height, 0);
+        z-index: 100;
+        background: var(--bg-dark);
+        border-top: 1px solid var(--border-color);
+    }
+
     /* Sidebar overlay */
     .sidebar-overlay {
         position: fixed;
