@@ -264,12 +264,18 @@ async function rerollSiblings() {
 function showGeneratingUI(isGenerating) {
     const generateBtn = document.getElementById('generate-btn');
     const cancelBtn = document.getElementById('cancel-btn');
+    const treeGenerateBtn = document.getElementById('tree-generate-btn');
+    const treeCancelBtn = document.getElementById('tree-cancel-btn');
 
     if (isGenerating) {
         generateBtn.style.display = 'none';
         cancelBtn.style.display = 'flex';
+        if (treeGenerateBtn) treeGenerateBtn.style.display = 'none';
+        if (treeCancelBtn) treeCancelBtn.style.display = 'flex';
     } else {
         generateBtn.style.display = 'flex';
         cancelBtn.style.display = 'none';
+        if (treeGenerateBtn) treeGenerateBtn.style.display = 'flex';
+        if (treeCancelBtn) treeCancelBtn.style.display = 'none';
     }
 }

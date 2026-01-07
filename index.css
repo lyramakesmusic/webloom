@@ -778,6 +778,11 @@ body.canvas-dragging * {
     flex: 1;
 }
 
+/* Tree Bottom Bar (mobile only) */
+.tree-bottom-bar {
+    display: none; /* Hidden on desktop */
+}
+
 /* ============================================
    BOTTOM BAR
    ============================================ */
@@ -1144,6 +1149,8 @@ body.canvas-dragging * {
     .mobile-tabs {
         display: flex;
         padding-left: 48px; /* Room for hamburger button */
+        position: relative;
+        z-index: 10; /* Above panels */
     }
 
     /* App container stacks vertically */
@@ -1193,7 +1200,7 @@ body.canvas-dragging * {
         top: 0;
         left: 0;
         right: 0;
-        bottom: 0;
+        bottom: 32px; /* Room for fixed footer */
         width: 100% !important;
         display: none;
         flex-direction: column;
@@ -1207,6 +1214,12 @@ body.canvas-dragging * {
     .editor-panel .panel-content {
         flex: 1;
         min-height: 0;
+    }
+
+    /* Editor full width on mobile */
+    .editor {
+        max-width: 100%;
+        padding: 16px;
     }
 
     /* Hide panel headers on mobile (redundant with tabs) */
@@ -1267,6 +1280,17 @@ body.canvas-dragging * {
         z-index: 100;
         background: var(--bg-dark);
         border-top: 1px solid var(--border-color);
+    }
+
+    /* Tree bottom bar visible on mobile */
+    .tree-bottom-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-top: 1px solid var(--border-color);
+        background-color: var(--bg-dark);
+        flex-shrink: 0;
     }
 
     /* Sidebar overlay */

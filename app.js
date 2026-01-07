@@ -595,6 +595,24 @@ function initBottomBar() {
         cancelAllGenerations();
     });
 
+    // Tree panel generate button (mobile)
+    document.getElementById('tree-generate-btn')?.addEventListener('click', () => {
+        const selectedId = appState.tree.selected_node_id;
+        if (selectedId) {
+            generateCompletions(selectedId);
+        }
+    });
+
+    // Tree panel cancel button (mobile)
+    document.getElementById('tree-cancel-btn')?.addEventListener('click', () => {
+        cancelAllGenerations();
+    });
+
+    // Tree panel reset view button (mobile)
+    document.getElementById('tree-reset-view-btn')?.addEventListener('click', () => {
+        resetViewToSelected();
+    });
+
     // Continue button - splits at cursor if not at end, generates single child and selects it
     document.getElementById('continue-btn').addEventListener('click', () => {
         continueFromCursor();

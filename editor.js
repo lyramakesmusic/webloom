@@ -412,6 +412,16 @@ function initEditor() {
 
     // Keyboard shortcuts
     editor.addEventListener('keydown', handleEditorKeydown);
+
+    // Click anywhere in container to focus editor (mobile fix)
+    const container = document.querySelector('.editor-container');
+    if (container) {
+        container.addEventListener('click', (e) => {
+            if (e.target === container) {
+                editor.focus();
+            }
+        });
+    }
 }
 
 // Capture selection before input for accurate replace detection
