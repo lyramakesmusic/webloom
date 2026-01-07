@@ -24,6 +24,11 @@ function getCurrentSettings() {
 
 // Generate completions for a parent node
 async function generateCompletions(parentNodeId, overrideCount = null) {
+    // Push undo state BEFORE generation so each generation is a separate undo step
+    if (typeof pushUndoState === 'function') {
+        pushUndoState();
+    }
+
     const settings = getCurrentSettings();
     const n = overrideCount ?? settings.n_siblings;
     const parent = appState.tree.nodes[parentNodeId];
@@ -106,6 +111,7 @@ async function generateCompletions(parentNodeId, overrideCount = null) {
                         node.text = fullText;
                         node.loading = false;
                         activeGenerations.delete(nodeId);
+                        if (navigator.vibrate) navigator.vibrate(10);
                         renderTree();
                         resolve({ nodeId, success: true });
                     },
@@ -146,8 +152,9 @@ async function generateCompletions(parentNodeId, overrideCount = null) {
         }
     });
 
-    // Reposition siblings
-    repositionSiblings(parentNodeId);
+    // Reposition entire tree from root
+    const root = findRoot(appState.tree.nodes);
+    if (root) repositionSiblings(root.id);
 
     // Show first error if any
     const firstError = results.find(r => !r.success);
@@ -161,40 +168,36 @@ async function generateCompletions(parentNodeId, overrideCount = null) {
 }
 
 // Reposition siblings after generation
+// Only position children where this is their FIRST parent (prevents DAG nodes being positioned multiple times)
 function repositionSiblings(parentNodeId) {
-    const children = getChildren(appState.tree.nodes, parentNodeId);
+    const allChildren = getChildren(appState.tree.nodes, parentNodeId);
+    // Filter: only position if this parent is the child's FIRST parent
+    const children = allChildren.filter(c => getParentIds(c)[0] === parentNodeId);
     if (children.length === 0) return;
 
     const parent = appState.tree.nodes[parentNodeId];
     const HORIZONTAL_OFFSET = 320;
     const VERTICAL_GAP = 30;
 
-    // Sort by Y position
     children.sort((a, b) => a.position.y - b.position.y);
 
-    // Calculate heights
     const heights = children.map(child => calculateNodeDimensions(child.text).height);
     const totalHeight = heights.reduce((sum, h) => sum + h, 0) + (children.length - 1) * VERTICAL_GAP;
 
-    // Center around parent
     const parentDims = calculateNodeDimensions(parent.text);
     const parentCenterY = parent.position.y + (parentDims.height / 2);
 
-    // Position each child so its center aligns with the stacked layout
     let currentCenterY = parentCenterY - (totalHeight / 2) + (heights[0] / 2);
 
     children.forEach((child, i) => {
         const childHeight = heights[i];
         child.position.x = parent.position.x + HORIZONTAL_OFFSET;
-        // Position by center, then convert to top-left
         child.position.y = currentCenterY - (childHeight / 2);
 
-        // Move to next child's center
         if (i < children.length - 1) {
             currentCenterY += (childHeight / 2) + VERTICAL_GAP + (heights[i + 1] / 2);
         }
 
-        // Recursively reposition descendants
         repositionSiblings(child.id);
     });
 }
@@ -215,6 +218,10 @@ function cancelAllGenerations() {
     });
     toDelete.forEach(id => delete appState.tree.nodes[id]);
 
+    // Reposition tree after deleting nodes
+    const root = findRoot(appState.tree.nodes);
+    if (root) repositionSiblings(root.id);
+
     showGeneratingUI(false);
     saveTree();
     renderTree();
@@ -229,12 +236,13 @@ async function rerollSiblings() {
     }
 
     const selectedNode = appState.tree.nodes[selectedId];
-    if (!selectedNode || !selectedNode.parent_id) {
+    const selectedParentIds = selectedNode ? getParentIds(selectedNode) : [];
+    if (!selectedNode || selectedParentIds.length === 0) {
         showError('Cannot reroll root node');
         return;
     }
 
-    const parentId = selectedNode.parent_id;
+    const parentId = selectedParentIds[0];
     const siblings = getChildren(appState.tree.nodes, parentId);
 
     // Delete all siblings (including selected)
@@ -245,8 +253,8 @@ async function rerollSiblings() {
         }
     });
 
-    // Clear selection
-    appState.tree.selected_node_id = parentId;
+    // Clear selection (use selectNode to properly update path)
+    selectNode(parentId);
 
     // Regenerate
     await generateCompletions(parentId);

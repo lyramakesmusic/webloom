@@ -4,7 +4,8 @@
 let appState = {
     tree: {
         nodes: {},
-        selected_node_id: null
+        selected_node_id: null,
+        selected_path: []  // DAG: array of node IDs from root to selected, determines which parent path to follow
     },
     settings: {
         model: 'moonshotai/kimi-k2',
@@ -49,6 +50,7 @@ function init() {
     initBottomBar();
     initToast();
     initPopups();
+    initMobile();
 
     // Restore panel order if swapped
     restorePanelOrder();
@@ -224,19 +226,30 @@ function loadTree() {
             if (tree.nodes && typeof tree.nodes === 'object') {
                 appState.tree = tree;
 
-                // Find root node (no parent_id)
-                const root = Object.values(appState.tree.nodes).find(n => !n.parent_id);
+                // Find root node (no parents)
+                const root = Object.values(appState.tree.nodes).find(n => isRoot(n));
 
                 // If no root, clear all orphaned nodes
                 if (!root && Object.keys(appState.tree.nodes).length > 0) {
                     console.warn('Clearing orphaned nodes - no root found');
                     appState.tree.nodes = {};
                     appState.tree.selected_node_id = null;
+                    appState.tree.selected_path = [];
                 }
 
                 // Validate selected_node_id exists, fallback to root
                 if (!appState.tree.selected_node_id || !appState.tree.nodes[appState.tree.selected_node_id]) {
                     appState.tree.selected_node_id = root ? root.id : null;
+                }
+
+                // Initialize/validate selected_path for DAG navigation
+                if (!Array.isArray(appState.tree.selected_path)) {
+                    appState.tree.selected_path = [];
+                }
+                // Recompute path if missing or stale (uses stored path as hint for continuity)
+                if (appState.tree.selected_node_id) {
+                    const path = getPathToNode(appState.tree.nodes, appState.tree.selected_node_id, appState.tree.selected_path);
+                    appState.tree.selected_path = path.map(n => n.id);
                 }
             }
         }
@@ -316,23 +329,52 @@ function initSidebar() {
     const sidebar = document.getElementById('sidebar');
     const collapseBtn = document.getElementById('sidebar-collapse-btn');
     const expandBtn = document.getElementById('sidebar-expand-btn');
+    const overlay = document.getElementById('sidebar-overlay');
 
-    collapseBtn.addEventListener('click', () => {
-        sidebar.classList.add('collapsed');
-        expandBtn.style.display = 'flex';
-        appState.ui.sidebar_collapsed = true;
-        saveUIState();
+    const isMobile = () => window.innerWidth <= 768;
+
+    function closeMobileSidebar() {
+        sidebar.classList.remove('mobile-open');
+        overlay.classList.remove('show');
+    }
+
+    function openMobileSidebar() {
+        sidebar.classList.add('mobile-open');
+        overlay.classList.add('show');
+    }
+
+    collapseBtn.addEventListener('click', (e) => {
+        console.log('[sidebar] collapse click', e);
+        if (isMobile()) {
+            closeMobileSidebar();
+        } else {
+            sidebar.classList.add('collapsed');
+            expandBtn.style.display = 'flex';
+            appState.ui.sidebar_collapsed = true;
+            saveUIState();
+        }
     });
 
-    expandBtn.addEventListener('click', () => {
-        sidebar.classList.remove('collapsed');
-        expandBtn.style.display = 'none';
-        appState.ui.sidebar_collapsed = false;
-        saveUIState();
+    expandBtn.addEventListener('click', (e) => {
+        console.log('[sidebar] expand click', e);
+        if (isMobile()) {
+            openMobileSidebar();
+        } else {
+            sidebar.classList.remove('collapsed');
+            expandBtn.style.display = 'none';
+            appState.ui.sidebar_collapsed = false;
+            saveUIState();
+        }
     });
 
-    // Apply saved state
-    if (appState.ui.sidebar_collapsed) {
+    // Click overlay to close
+    overlay?.addEventListener('click', (e) => {
+        console.log('[sidebar] overlay click', e);
+        closeMobileSidebar();
+    });
+
+    // Apply saved state (desktop only)
+    if (appState.ui.sidebar_collapsed && !isMobile()) {
         sidebar.classList.add('collapsed');
         expandBtn.style.display = 'flex';
     }
@@ -386,6 +428,15 @@ function handleTreeImport(e) {
             if (!appState.tree.selected_node_id || !appState.tree.nodes[appState.tree.selected_node_id]) {
                 const root = findRoot(appState.tree.nodes);
                 appState.tree.selected_node_id = root ? root.id : null;
+            }
+
+            // Initialize selected_path for DAG navigation
+            if (!Array.isArray(appState.tree.selected_path)) {
+                appState.tree.selected_path = [];
+            }
+            if (appState.tree.selected_node_id) {
+                const path = getPathToNode(appState.tree.nodes, appState.tree.selected_node_id, appState.tree.selected_path);
+                appState.tree.selected_path = path.map(n => n.id);
             }
 
             saveTree();
@@ -661,6 +712,81 @@ function initPopups() {
             endpointPopup?.classList.remove('show');
         }
     });
+}
+
+// ============================================
+// MOBILE
+// ============================================
+
+function initMobile() {
+    const mobileTabs = document.getElementById('mobile-tabs');
+    const editorPanel = document.getElementById('editor-panel');
+    const treePanel = document.getElementById('tree-panel');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+
+    // Check if mobile
+    const isMobile = () => window.innerWidth <= 768;
+
+    // Set initial mobile state
+    function applyMobileState() {
+        console.log('[mobile] applyMobileState, isMobile:', isMobile());
+        if (isMobile()) {
+            // Mobile: show tabs, activate current tab's panel
+            const activeTab = mobileTabs.querySelector('.mobile-tab.active')?.dataset.tab || 'editor';
+            setMobileTab(activeTab);
+            // Close sidebar overlay
+            sidebar.classList.remove('mobile-open');
+            overlay.classList.remove('show');
+        } else {
+            // Desktop: show both panels side by side
+            editorPanel.classList.remove('mobile-active');
+            treePanel.classList.remove('mobile-active');
+            // Reset inline styles that might override CSS
+            editorPanel.style.display = '';
+            treePanel.style.display = '';
+            // Close mobile sidebar state
+            sidebar.classList.remove('mobile-open');
+            overlay.classList.remove('show');
+            // Restore desktop sidebar state
+            const expandBtn = document.getElementById('sidebar-expand-btn');
+            if (appState.ui.sidebar_collapsed) {
+                sidebar.classList.add('collapsed');
+                expandBtn.style.display = 'flex';
+            } else {
+                sidebar.classList.remove('collapsed');
+                expandBtn.style.display = 'none';
+            }
+        }
+    }
+
+    // Switch mobile tab
+    function setMobileTab(tab) {
+        // Update tab buttons
+        mobileTabs.querySelectorAll('.mobile-tab').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tab);
+        });
+
+        // Show/hide panels
+        editorPanel.classList.toggle('mobile-active', tab === 'editor');
+        treePanel.classList.toggle('mobile-active', tab === 'tree');
+    }
+
+    // Tab click handlers
+    mobileTabs?.querySelectorAll('.mobile-tab').forEach(tab => {
+        tab.addEventListener('click', (e) => {
+            console.log('[mobile] tab click:', tab.dataset.tab, e);
+            if (isMobile()) {
+                setMobileTab(tab.dataset.tab);
+            }
+        });
+    });
+
+    // Handle resize
+    window.addEventListener('resize', applyMobileState);
+
+    // Initial setup
+    applyMobileState();
 }
 
 // ============================================

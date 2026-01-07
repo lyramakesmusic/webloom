@@ -1,9 +1,9 @@
-// tree.js - Tree data structure and operations
+// tree.js - DAG data structure and operations (supports path convergence)
 
 // Node structure:
 // {
 //   id: string (uuid),
-//   parent_id: string | null,
+//   parent_ids: string[] (empty=root, multiple=convergence point),
 //   text: string,
 //   type: 'human' | 'ai',
 //   model: string | null,
@@ -11,6 +11,25 @@
 //   loading: boolean,
 //   error: string | null
 // }
+// Legacy: parent_id string is auto-converted to parent_ids array
+
+// Helper: get parent_ids array (handles legacy parent_id)
+function getParentIds(node) {
+    if (!node) return [];
+    if (Array.isArray(node.parent_ids)) return node.parent_ids;
+    if (node.parent_id) return [node.parent_id];
+    return [];
+}
+
+// Helper: check if node is a root (no parents)
+function isRoot(node) {
+    return getParentIds(node).length === 0;
+}
+
+// Helper: check if node is a convergence point (multiple parents)
+function isConvergence(node) {
+    return getParentIds(node).length > 1;
+}
 
 function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -21,13 +40,26 @@ function generateUUID() {
 }
 
 // Get array of nodes from root to given node
-function getPathToNode(nodes, nodeId) {
+// For DAG: follows first parent when multiple exist, unless pathHint provided
+// pathHint: array of node IDs specifying exact path to follow
+function getPathToNode(nodes, nodeId, pathHint = null) {
     const path = [];
     let current = nodes[nodeId];
 
     while (current) {
         path.unshift(current);
-        current = current.parent_id ? nodes[current.parent_id] : null;
+        const parentIds = getParentIds(current);
+        if (parentIds.length === 0) break;
+
+        // Choose which parent to follow
+        let nextParentId;
+        if (pathHint) {
+            // Find the parent that's in the path hint
+            nextParentId = parentIds.find(pid => pathHint.includes(pid)) || parentIds[0];
+        } else {
+            nextParentId = parentIds[0];
+        }
+        current = nodes[nextParentId];
     }
 
     return path;
@@ -39,9 +71,9 @@ function getFullText(nodes, nodeId) {
     return path.map(n => n.text || '').join('');
 }
 
-// Get all children of a node
+// Get all children of a node (nodes that have this node as any parent)
 function getChildren(nodes, nodeId) {
-    return Object.values(nodes).filter(n => n.parent_id === nodeId);
+    return Object.values(nodes).filter(n => getParentIds(n).includes(nodeId));
 }
 
 // Get all descendants of a node (recursive)
@@ -62,17 +94,33 @@ function isLeaf(nodes, nodeId) {
     return getChildren(nodes, nodeId).length === 0;
 }
 
-// Find root node
+// Find root node(s) - in DAG there can be multiple roots
 function findRoot(nodes) {
-    return Object.values(nodes).find(n => !n.parent_id);
+    return Object.values(nodes).find(n => isRoot(n));
+}
+
+// Find all root nodes
+function findRoots(nodes) {
+    return Object.values(nodes).filter(n => isRoot(n));
 }
 
 // Create a new node
+// parentId can be: null (root), string (single parent), or string[] (multiple parents for convergence)
 function createNode(parentId, text, type = 'human', model = null, position = null, params = {}) {
     const p = params || {};
+    // Normalize parent_ids to array
+    let parentIds;
+    if (parentId === null || parentId === undefined) {
+        parentIds = [];
+    } else if (Array.isArray(parentId)) {
+        parentIds = parentId;
+    } else {
+        parentIds = [parentId];
+    }
+
     return {
         id: generateUUID(),
-        parent_id: parentId,
+        parent_ids: parentIds,
         text: text,
         type: type,
         model: model,
@@ -116,16 +164,39 @@ function deleteNode(nodes, nodeId) {
     delete nodes[nodeId];
 }
 
-// Delete node but preserve children (reparent to grandparent)
+// Add a parent to a node (for creating convergence points)
+function addParentToNode(node, newParentId) {
+    const parentIds = getParentIds(node);
+    if (!parentIds.includes(newParentId)) {
+        node.parent_ids = [...parentIds, newParentId];
+    }
+}
+
+// Remove a parent from a node
+function removeParentFromNode(node, parentIdToRemove) {
+    const parentIds = getParentIds(node);
+    node.parent_ids = parentIds.filter(pid => pid !== parentIdToRemove);
+}
+
+// Delete node but preserve children (reparent to grandparents)
 function deleteNodePreserveChildren(nodes, nodeId) {
     const node = nodes[nodeId];
     if (!node) return;
 
     const children = getChildren(nodes, nodeId);
+    const parentIds = getParentIds(node);
 
-    // Reparent children to grandparent
+    // Reparent children: replace this node's ID with its parent IDs in children's parent_ids
     children.forEach(child => {
-        child.parent_id = node.parent_id;
+        const childParentIds = getParentIds(child);
+        const newParentIds = childParentIds.filter(pid => pid !== nodeId);
+        // Add this node's parents to the child's parents
+        parentIds.forEach(pid => {
+            if (!newParentIds.includes(pid)) {
+                newParentIds.push(pid);
+            }
+        });
+        child.parent_ids = newParentIds;
     });
 
     // Delete the node
@@ -210,7 +281,8 @@ function generateSpline(parentNode, childNode) {
 }
 
 // Calculate visible nodes based on focused node (smart visibility)
-function calculateVisibleNodes(focusedNodeId, nodes) {
+// pathHint: array of node IDs representing the current navigation path (for DAG)
+function calculateVisibleNodes(focusedNodeId, nodes, pathHint = null) {
     const visible = new Set();
 
     if (!focusedNodeId || !nodes[focusedNodeId]) {
@@ -222,11 +294,19 @@ function calculateVisibleNodes(focusedNodeId, nodes) {
     visible.add(focusedNodeId);
 
     const focused = nodes[focusedNodeId];
+    const focusedParentIds = getParentIds(focused);
 
-    // Focused node's siblings
-    if (focused.parent_id) {
+    // Focused node's siblings (only from active path parent)
+    if (focusedParentIds.length > 0) {
+        // Use pathHint to find which parent we came from, fallback to first
+        let activeParentId = focusedParentIds[0];
+        if (pathHint && pathHint.length > 0) {
+            const pathParent = focusedParentIds.find(pid => pathHint.includes(pid));
+            if (pathParent) activeParentId = pathParent;
+        }
         Object.values(nodes).forEach(node => {
-            if (node.parent_id === focused.parent_id) {
+            const nodeParentIds = getParentIds(node);
+            if (nodeParentIds.includes(activeParentId)) {
                 visible.add(node.id);
             }
         });
@@ -247,7 +327,7 @@ function calculateVisibleNodes(focusedNodeId, nodes) {
         } else {
             // Multiple children - check which have descendants
             const childrenWithDescendants = children.filter(child => {
-                return Object.values(nodes).some(n => n.parent_id === child.id);
+                return getChildren(nodes, child.id).length > 0;
             });
 
             // If only one sibling has descendants, expand that path
@@ -259,22 +339,28 @@ function calculateVisibleNodes(focusedNodeId, nodes) {
 
     addDescendants(focusedNodeId);
 
-    // Walk up ancestors
+    // Walk up ancestors (follow first parent for now)
     let current = focused;
-    while (current.parent_id) {
-        const parent = nodes[current.parent_id];
+    let currentParentIds = getParentIds(current);
+    while (currentParentIds.length > 0) {
+        const parentId = currentParentIds[0]; // Follow first parent
+        const parent = nodes[parentId];
+        if (!parent) break;
         visible.add(parent.id);
 
         // Parent's siblings
-        if (parent.parent_id) {
+        const parentParentIds = getParentIds(parent);
+        if (parentParentIds.length > 0) {
             Object.values(nodes).forEach(node => {
-                if (node.parent_id === parent.parent_id) {
+                const nodeParentIds = getParentIds(node);
+                if (parentParentIds.some(pid => nodeParentIds.includes(pid))) {
                     visible.add(node.id);
                 }
             });
         }
 
         current = parent;
+        currentParentIds = getParentIds(current);
     }
 
     return visible;
@@ -294,36 +380,33 @@ function autoformatTree(nodes) {
     formatNodeAndChildren(nodes, root.id);
 }
 
+// Only position children where this is their FIRST parent (prevents DAG nodes being positioned multiple times)
 function formatNodeAndChildren(nodes, nodeId) {
     const parent = nodes[nodeId];
-    const children = getChildren(nodes, nodeId);
+    const allChildren = getChildren(nodes, nodeId);
+    // Filter: only position if this parent is the child's FIRST parent
+    const children = allChildren.filter(c => getParentIds(c)[0] === nodeId);
 
     if (children.length === 0) return;
 
     const HORIZONTAL_OFFSET = 320;
     const VERTICAL_GAP = 30;
 
-    // Sort by Y position to maintain order
     children.sort((a, b) => a.position.y - b.position.y);
 
-    // Calculate parent height
     const parentDims = calculateNodeDimensions(parent.text);
     const parentCenterY = parent.position.y + (parentDims.height / 2);
 
-    // Calculate children heights
     const heights = children.map(child => calculateNodeDimensions(child.text).height);
     const totalHeight = heights.reduce((sum, h) => sum + h, 0) + (children.length - 1) * VERTICAL_GAP;
 
-    // Position each child so its center aligns with the stacked layout
     let currentCenterY = parentCenterY - (totalHeight / 2) + (heights[0] / 2);
 
     children.forEach((child, i) => {
         const childHeight = heights[i];
         child.position.x = parent.position.x + HORIZONTAL_OFFSET;
-        // Position by center, then convert to top-left
         child.position.y = currentCenterY - (childHeight / 2);
 
-        // Move to next child's center
         if (i < children.length - 1) {
             currentCenterY += (childHeight / 2) + VERTICAL_GAP + (heights[i + 1] / 2);
         }
