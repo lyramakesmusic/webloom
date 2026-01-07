@@ -367,10 +367,17 @@ function initSidebar() {
         }
     });
 
-    // Click overlay to close
+    // Click overlay to close (only if clicking directly on overlay, not bubbled)
     overlay?.addEventListener('click', (e) => {
-        console.log('[sidebar] overlay click', e);
-        closeMobileSidebar();
+        if (e.target === overlay) {
+            console.log('[sidebar] overlay click', e);
+            closeMobileSidebar();
+        }
+    });
+
+    // Prevent sidebar clicks from accidentally closing (touch event weirdness)
+    sidebar?.addEventListener('click', (e) => {
+        e.stopPropagation();
     });
 
     // Apply saved state (desktop only)

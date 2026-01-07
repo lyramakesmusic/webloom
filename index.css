@@ -1143,6 +1143,7 @@ body.canvas-dragging * {
     /* Show mobile tabs */
     .mobile-tabs {
         display: flex;
+        padding-left: 48px; /* Room for hamburger button */
     }
 
     /* App container stacks vertically */
