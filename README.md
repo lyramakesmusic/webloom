@@ -2,6 +2,8 @@
 
 A tree-based text completion explorer for base LLMs. Generate multiple completions simultaneously, branch from any node, and navigate through possibility space on an infinite canvas. Pure static site - just open index.html and start exploring.
 
+Live at [web-loom.org](https://web-loom.org/)
+
 ![screenshot of webloom interface showing settings panel on left, editor in center, and branching tree on right](interface.png)
 
 ## Quick Start
@@ -99,3 +101,4 @@ webloom/
 ## Contributing
 
 Contributions are welcome! Feel free to submit issues and pull requests.
+
